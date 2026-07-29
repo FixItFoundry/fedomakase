@@ -69,7 +69,7 @@ cp -f "$OMARCHY_DIR/installer/omarchy-ks-offline.cfg" "$BUILD_DIR/extracted/omar
 cp -f "$OMARCHY_DIR/installer/omarchy-ks.cfg" "$BUILD_DIR/extracted/omarchy-ks.cfg"
 
 mkdir -p "$BUILD_DIR/extracted/omarchy-fedora"
-cp -rf "$OMARCHY_DIR"/* "$BUILD_DIR/extracted/omarchy-fedora/"
+rsync -a --exclude="*.iso" "$OMARCHY_DIR/" "$BUILD_DIR/extracted/omarchy-fedora/"
 
 # Download static gum for installer UI
 echo "Downloading static gum binary..."
@@ -113,9 +113,10 @@ for cfg in "$BUILD_DIR/extracted/boot/grub2/grub.cfg" "$BUILD_DIR/extracted/EFI/
   if [[ -f "$cfg" ]]; then
     sed -i 's/set default=.*/set default="0"/' "$cfg"
     sed -i 's/set timeout=.*/set timeout=1/' "$cfg"
-    if ! grep -q "inst.ks=" "$cfg"; then
-      sed -i "s|inst.stage2=hd:LABEL=[^ ]*|& inst.ks=hd:LABEL=$ISO_LABEL:/omarchy-ks-offline.cfg|g" "$cfg"
-    fi
+    # Remove any existing inst.ks= parameter to prevent duplicates
+    sed -i 's/ inst\.ks=[^ ]*//g' "$cfg"
+    # Append the correct inst.ks= parameter
+    sed -i "s|inst.stage2=hd:LABEL=[^ ]*|& inst.ks=hd:LABEL=$ISO_LABEL:/omarchy-ks-offline.cfg|g" "$cfg"
   fi
 done
 
