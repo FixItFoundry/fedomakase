@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# omarchy:summary=Upgrade to Omarchy Quattro (Fedora Edition)
+# omarchy:requires-sudo=true
+
+echo "The Omarchy Quattro upgrade script is already installed as the base system on Fedora."
+echo ""
+echo "On Fedora, Omarchy Quattro is already installed as the base system."
+echo "To update Omarchy, run:"
+echo ""
+echo "  omarchy update"
+echo ""
+exit 0

@@ -1,0 +1,13 @@
+#!/bin/bash
+
+set -e
+
+# Re-apply Fedora patches after every upstream Omarchy update.
+# Upstream overwrites /usr/share/omarchy/ on each RPM update,
+# so this hook restores our Fedora-specific adaptations.
+
+if (( EUID == 0 )); then
+  omarchy-apply-fedora-patches
+else
+  sudo omarchy-apply-fedora-patches
+fi

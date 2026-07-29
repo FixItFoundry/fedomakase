@@ -1,0 +1,7 @@
+*.iso
+*.img
+/tmp/
+*.log
+.DS_Store
+*.swp
+*~

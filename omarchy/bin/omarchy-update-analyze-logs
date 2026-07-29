@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# omarchy:summary=Check the update log for known failure conditions
+
+update_log="/tmp/omarchy-update.log"
+
+# Check for dracut initramfs generation failure
+if grep -qi "dracut\|initramfs\|initrd" "$update_log"; then
+  if grep -qi "error\|fail" "$update_log" | grep -qi "dracut\|initramfs\|initrd"; then
+    echo -e '\e[31mError: Initramfs generation may have failed. Review logs before restart.\e[0m'
+    echo
+  fi
+fi

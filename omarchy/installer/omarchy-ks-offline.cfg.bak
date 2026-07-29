@@ -1,0 +1,244 @@
+# Omarchy Fedora Automated Offline Installation Kickstart File (omarchy-ks-offline.cfg)
+
+
+
+# System Language & Keyboard
+lang en_US.UTF-8
+keyboard us
+timezone UTC --utc
+
+# Network Configuration
+network --bootproto=dhcp --device=link --activate
+
+# Run Anaconda in text mode to avoid hiding errors behind a broken GUI
+text
+firstboot --disable
+reboot
+
+# Offline Local ISO Repositories
+url --url="file:///run/install/repo"
+repo --name="omarchy-local" --baseurl="file:///run/install/repo/omarchy-repo"
+repo --name="copr-hyprland" --baseurl="https://copr-be.cloud.fedoraproject.org/results/lionheartp/Hyprland/fedora-44-x86_64/"
+
+# -------------------------------------------------------------------------
+# PRE-INSTALL: Run the interactive Gum UI on TTY3 to gather user settings
+# -------------------------------------------------------------------------
+%pre --interpreter=/bin/bash --erroronfail
+# Anaconda requires the include filename to appear literally in %pre to defer evaluation
+touch /tmp/omarchy-ks-include.cfg
+
+exec < /dev/tty3 > /dev/tty3 2>&1
+chvt 3
+printf '\033[2J\033[H'
+
+export TERM=linux
+if [ -f /run/install/repo/omarchy-fedora/installer/omarchy-installer.sh ]; then
+  export PATH="$PATH:/run/install/repo/omarchy-fedora/installer"
+  if ! bash /run/install/repo/omarchy-fedora/installer/omarchy-installer.sh; then
+    echo "Installer was aborted or failed. Rebooting in 5 seconds..."
+    sleep 5
+    reboot
+  fi
+else
+  echo "Installer script not found at /run/install/repo/omarchy-fedora/installer/omarchy-installer.sh"
+  sleep 5
+  poweroff -f
+fi
+
+chvt 1
+%end
+
+# -------------------------------------------------------------------------
+# DYNAMIC INCLUDE: Must be placed AFTER %pre so the file exists!
+# -------------------------------------------------------------------------
+%include /tmp/omarchy-ks-include.cfg
+
+# -------------------------------------------------------------------------
+# PACKAGES
+# -------------------------------------------------------------------------
+%packages
+@core
+@hardware-support
+hyprland
+hyprpaper
+hyprlock
+hypridle
+waybar
+rofi-wayland
+swaync
+slurp
+grim
+wl-clipboard
+brightnessctl
+pamixer
+wireplumber
+pipewire
+pipewire-utils
+xdg-desktop-portal
+xdg-desktop-portal-gtk
+xdg-desktop-portal-hyprland
+sddm
+qt6-qtwayland
+qt6-qtdeclarative
+qt6-qt5compat
+qt6-qtsvg
+plymouth
+power-profiles-daemon
+lxpolkit
+kitty
+foot
+neovim
+btop
+fastfetch
+fzf
+ripgrep
+fd-find
+eza
+zoxide
+# starship
+tmux
+gum
+bat
+# lazygit
+git
+zsh
+bash-completion
+nautilus
+evince
+loupe
+imv
+mpv
+gnome-disk-utility
+gnome-calculator
+flatpak
+NetworkManager
+NetworkManager-wifi
+NetworkManager-bluetooth
+bluez
+bluez-tools
+# bluez-firmware
+linux-firmware
+kernel-modules-extra
+# iwl7260-firmware
+iwlwifi-dvm-firmware
+iwlwifi-mvm-firmware
+realtek-firmware
+alsa-firmware
+wpa_supplicant
+iwd
+rfkill
+jq
+unzip
+tar
+xz
+p7zip
+ca-certificates
+gcc
+gcc-c++
+make
+clang
+llvm
+ruby
+lua
+python3
+python3-pip
+docker
+docker-compose
+google-noto-fonts-common
+google-noto-emoji-fonts
+google-noto-sans-fonts
+jetbrains-mono-fonts-all
+yaru-icon-theme
+-gnome-shell
+%end
+
+# -------------------------------------------------------------------------
+# POST-INSTALL (NO CHROOT): Copy payload files from ISO into the new system
+# -------------------------------------------------------------------------
+%post --nochroot --log=/mnt/sysimage/var/log/omarchy-copy.log
+echo "[Omarchy Fedora Offline Setup] Copying Omarchy payload from ISO to sysimage..."
+if [ -d /run/install/repo/omarchy-fedora ]; then
+  mkdir -p /mnt/sysimage/usr/share/omarchy
+  cp -rf /run/install/repo/omarchy-fedora/* /mnt/sysimage/usr/share/omarchy/
+else
+  echo "WARNING: /run/install/repo/omarchy-fedora not found!"
+fi
+%end
+
+# -------------------------------------------------------------------------
+# POST-INSTALL (CHROOT): Configure the new system
+# -------------------------------------------------------------------------
+%post --log=/var/log/omarchy-install.log
+
+echo "[Omarchy Fedora Offline Setup] Starting post-install configuration..."
+
+# 1. Enable System Services
+systemctl enable sddm.service
+systemctl enable NetworkManager.service
+systemctl enable bluetooth.service
+systemctl enable docker.service
+systemctl enable power-profiles-daemon.service
+systemctl set-default graphical.target
+
+# 2. Configure Flathub
+flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo || true
+
+# 3. Seed Omarchy Configurations
+if [ -d /usr/share/omarchy ]; then
+  chmod +x /usr/share/omarchy/bin/* /usr/share/omarchy/installer/* 2>/dev/null || true
+  ln -sf /usr/share/omarchy/bin/omarchy /usr/local/bin/omarchy
+  chmod +x /usr/local/bin/omarchy 2>/dev/null || true
+  
+  if [ -d /usr/share/omarchy/etc ]; then
+    cp -rf /usr/share/omarchy/etc/* /etc/
+  fi
+
+  if [ -d /usr/share/omarchy/default/sddm/omarchy ]; then
+    mkdir -p /usr/share/sddm/themes
+    cp -rf /usr/share/omarchy/default/sddm/omarchy /usr/share/sddm/themes/omarchy
+  fi
+
+  mkdir -p /etc/skel/.config
+  cp -rf /usr/share/omarchy/config/* /etc/skel/.config/
+
+  for user_dir in /home/*; do
+    if [ -d "$user_dir" ]; then
+      user_name=$(basename "$user_dir")
+      if [ "$user_name" != "lost+found" ]; then
+        mkdir -p "$user_dir/.config"
+        cp -rf /usr/share/omarchy/config/* "$user_dir/.config/"
+        chown -R "$user_name:$user_name" "$user_dir/.config"
+      fi
+    fi
+  done
+fi
+
+# 4. Set Hyprland as Default Wayland Session for SDDM
+mkdir -p /etc/sddm.conf.d
+cat << 'SDDM_EOF' > /etc/sddm.conf.d/10-wayland.conf
+[General]
+DisplayServer=wayland
+
+[Wayland]
+CompositorCommand=Hyprland
+SessionDir=/usr/share/wayland-sessions
+SDDM_EOF
+
+cat << 'SDDM_EOF' > /etc/sddm.conf.d/10-theme.conf
+[Theme]
+Current=omarchy
+SDDM_EOF
+
+# 5. Automated TPM2 Auto-Unlock Binding for LUKS Encryption
+echo "[Omarchy Fedora Offline Setup] Checking for LUKS encrypted volume to bind to TPM2..."
+luks_partition=$(lsblk -o NAME,FSTYPE -dn | grep crypto_LUKS | awk '{print $1}' | head -n 1)
+if [ -n "$luks_partition" ]; then
+  echo "Found encrypted partition /dev/$luks_partition. Binding to hardware TPM2 chip..."
+  systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+7 "/dev/$luks_partition" || true
+  if [ -f /etc/crypttab ]; then
+    sed -i 's/tpm2-device=off/tpm2-device=auto/g' /etc/crypttab
+  fi
+fi
+
+echo "[Omarchy Fedora Offline Setup] Post-install configuration complete!"
+%end

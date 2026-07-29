@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# omarchy:summary=Review and optionally remove orphaned system packages after updates
+# omarchy:requires-sudo=true
+
+set -e
+
+echo -e "\e[32m\nRemoving orphan system packages (DNF autoremove)\e[0m"
+if (( EUID == 0 )); then
+  dnf autoremove -y
+else
+  sudo dnf autoremove -y
+fi
+echo

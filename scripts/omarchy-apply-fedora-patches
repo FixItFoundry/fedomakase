@@ -1,0 +1,260 @@
+#!/bin/bash
+
+# omarchy:summary=Re-apply Fedora-specific patches after upstream updates
+# omarchy:requires-sudo=true
+
+set -e
+
+OMARCHY="${OMARCHY_PATH:-/usr/share/omarchy}"
+PATCH_DIR="${OMARCHY_FEDORA_PATCHES:-$OMARCHY/fedora-patches}"
+
+echo -e "\e[32mRe-applying Fedora patches...\e[0m"
+
+# --- Helper: apply sed fix only if pattern exists (idempotent) ---
+apply_sed() {
+  local file="$1" pattern="$2"
+  if [[ -f "$file" ]] && grep -q "$3" "$file" 2>/dev/null; then
+    sed -i "$pattern" "$file"
+  fi
+}
+
+# --- BINDINGS ---
+echo "[1/12] Keybinding fixes..."
+if [[ -f "$PATCH_DIR/utilities.lua" ]]; then
+  cp "$PATCH_DIR/utilities.lua" "$OMARCHY/default/hypr/bindings/utilities.lua"
+else
+  echo "  WARNING: utilities.lua patch not found at $PATCH_DIR/utilities.lua"
+fi
+
+# --- MENU ---
+echo "[2/12] Menu labels..."
+M="$OMARCHY/default/omarchy/omarchy-menu.jsonc"
+apply_sed "$M" 's|"learn.arch"|"learn.fedora"|' 'learn.arch'
+apply_sed "$M" 's|"label":"Arch"|"label":"Fedora"|' '"label":"Arch"'
+apply_sed "$M" 's|https://wiki.archlinux.org/title/Main_page|https://docs.fedoraproject.org/en-US/fedora/|' 'wiki.archlinux.org'
+apply_sed "$M" 's|"label":"AUR"|"label":"COPR"|' '"label":"AUR"'
+apply_sed "$M" 's|\[AUR\]|[COPR]|' '\[AUR\]'
+
+# --- TPM2 SUPPORT ---
+echo "[3/12] TPM2 unlock script..."
+if [[ -f "$PATCH_DIR/omarchy-setup-tpm2-unlock" ]]; then
+  cp "$PATCH_DIR/omarchy-setup-tpm2-unlock" "$OMARCHY/bin/omarchy-setup-tpm2-unlock"
+  chmod +x "$OMARCHY/bin/omarchy-setup-tpm2-unlock"
+else
+  echo "  WARNING: TPM patch not found at $PATCH_DIR/omarchy-setup-tpm2-unlock"
+  echo "  Run ~/Projects/Omarchy-Fedora/apply.sh to install patches."
+fi
+
+# --- DRACUT TPM2 CONFIG ---
+echo "[4/12] Dracut TPM2 config..."
+mkdir -p /etc/dracut.conf.d
+if [[ -f /etc/dracut.conf.d/tpm2.conf ]]; then
+  if ! grep -q "tpm2-tss" /etc/dracut.conf.d/tpm2.conf 2>/dev/null; then
+    echo 'add_dracutmodules+=" tpm2-tss "' >> /etc/dracut.conf.d/tpm2.conf
+  fi
+else
+  echo 'add_dracutmodules+=" tpm2-tss "' > /etc/dracut.conf.d/tpm2.conf
+fi
+# Remove legacy keyfile config from TPM 1.2 workaround
+rm -f /etc/dracut.conf.d/omarchy-keyfile.conf
+
+# --- WEBAPP MANIFESTS ---
+echo "[5/12] Webapp manifests..."
+if [[ -d "$OMARCHY/applications" ]]; then
+  for user_dir in /home/*; do
+    if [[ -d "$user_dir" ]]; then
+      user_name=$(basename "$user_dir")
+      if [[ "$user_name" != "lost+found" ]]; then
+        mkdir -p "$user_dir/.local/share/applications"
+        cp -f "$OMARCHY/applications/"*.desktop "$user_dir/.local/share/applications/" 2>/dev/null || true
+        cp -rf "$OMARCHY/applications/icons" "$user_dir/.local/share/icons/" 2>/dev/null || true
+        chown -R "$user_name:$user_name" "$user_dir/.local/share/applications" 2>/dev/null || true
+      fi
+    fi
+  done
+  # Also install for any new users via skel
+  mkdir -p /etc/skel/.local/share/applications
+  cp -f "$OMARCHY/applications/"*.desktop /etc/skel/.local/share/applications/ 2>/dev/null || true
+  cp -rf "$OMARCHY/applications/icons" /etc/skel/.local/share/icons/ 2>/dev/null || true
+fi
+
+# --- KICKSTART ---
+echo "[6/12] Kickstart files..."
+if [[ -d "$PATCH_DIR" ]]; then
+  for ks in omarchy-ks.cfg omarchy-ks-offline.cfg; do
+    if [[ -f "$PATCH_DIR/$ks" ]]; then
+      cp "$PATCH_DIR/$ks" "$OMARCHY/installer/$ks"
+      chmod +x "$OMARCHY/installer/$ks"
+    fi
+  done
+else
+  echo "  WARNING: Kickstart patches not found in $PATCH_DIR"
+fi
+
+# --- UPDATE SCRIPTS ---
+echo "[7/12] Update scripts..."
+apply_sed "$OMARCHY/bin/omarchy-update-firmware" 's|/boot/EFI/arch/|/boot/EFI/fedora/|' '/boot/EFI/arch/'
+apply_sed "$OMARCHY/bin/omarchy-upgrade-to-quattro" 's|designed for Arch Linux systems.|already installed as the base system on Fedora.|' 'designed for Arch Linux'
+
+# Replace analyze-logs with Fedora-compatible version
+cat > "$OMARCHY/bin/omarchy-update-analyze-logs" << 'EOF'
+#!/bin/bash
+
+# omarchy:summary=Check the update log for known failure conditions
+
+update_log="/tmp/omarchy-update.log"
+
+# Check for dracut initramfs generation failure
+if grep -qi "dracut\|initramfs\|initrd" "$update_log"; then
+  if grep -qi "error\|fail" "$update_log" | grep -qi "dracut\|initramfs\|initrd"; then
+    echo -e '\e[31mError: Initramfs generation may have failed. Review logs before restart.\e[0m'
+    echo
+  fi
+fi
+EOF
+chmod +x "$OMARCHY/bin/omarchy-update-analyze-logs"
+
+# --- INSTALL SCRIPTS ---
+echo "[6/11] Install scripts..."
+B="$OMARCHY/bin"
+
+# Fedora uses 'uwsm app' instead of the 'uwsm-app' wrapper across all scripts, configs, and QML files
+find "$OMARCHY" -type f -exec sed -i 's|uwsm-app|uwsm app|g' {} +
+
+apply_sed "$B/omarchy-install-browser" 's|microsoft-edge-stable-bin|microsoft-edge-stable|' 'microsoft-edge-stable-bin'
+apply_sed "$B/omarchy-install-browser" 's|brave-bin|brave-browser|' 'brave-bin'
+apply_sed "$B/omarchy-install-browser" 's|brave-origin-bin|brave-browser-origin|' 'brave-origin-bin'
+apply_sed "$B/omarchy-install-browser" 's|zen-browser-bin|zen|' 'zen-browser-bin'
+apply_sed "$B/omarchy-install-browser" 's|google-chrome-stable|google-chrome-stable|' 'google-chrome'
+apply_sed "$B/omarchy-install-service-nordvpn" 's|nordvpn-bin|nordvpn|' 'nordvpn-bin'
+apply_sed "$B/omarchy-install-editor-emacs" 's|via the omarchy-emacs AUR package|via COPR|' 'AUR package'
+apply_sed "$B/omarchy-install-gaming-retroarch" 's|installed by pacman|installed by dnf|' 'installed by pacman'
+apply_sed "$B/omarchy-theme-set-gnome" 's|arch-chroot|chroot|' 'arch-chroot'
+
+# RetroArch: remove AUR-only -git packages
+for pkg in libretro-cap32-git libretro-fbneo-git libretro-uae-git libretro-database-git retroarch-joypad-autoconfig-git; do
+  apply_sed "$B/omarchy-install-gaming-retroarch" "/$pkg/d" "$pkg"
+done
+apply_sed "$B/omarchy-install-gaming-retroarch" 's|libretro-vice-x.*-git||' 'libretro-vice-x.*-git'
+apply_sed "$B/omarchy-install-gaming-retroarch" 's|libretro-yabause \\$|libretro-yabause|' 'libretro-yabause'
+
+# Firewall: switch ufw to firewalld
+apply_sed "$B/omarchy-install-service-sunshine" 's|omarchy-cmd-missing ufw|omarchy-cmd-missing firewall-cmd|' 'omarchy-cmd-missing ufw'
+apply_sed "$B/omarchy-install-service-sunshine" 's|sudo ufw allow in proto "$proto" from "$cidr" to any port "$port".*|sudo firewall-cmd --add-port="$port"/"$proto" --permanent >/dev/null|' 'sudo ufw allow in proto'
+apply_sed "$B/omarchy-install-service-sunshine" 's|sudo ufw allow in on tailscale0 to any port "$port" proto "$proto".*|sudo firewall-cmd --add-port="$port"/"$proto" --permanent >/dev/null|' 'sudo ufw allow in on tailscale0'
+apply_sed "$B/omarchy-install-service-sunshine" 's|sudo ufw reload|sudo firewall-cmd --reload|' 'sudo ufw reload'
+
+apply_sed "$B/omarchy-remove-service-sunshine" 's|omarchy-cmd-missing ufw|omarchy-cmd-missing firewall-cmd|' 'omarchy-cmd-missing ufw'
+apply_sed "$B/omarchy-remove-service-sunshine" 's|delete_ufw_rule allow in proto "$proto" from "$cidr" to any port "$port"|sudo firewall-cmd --remove-port="$port"/"$proto" --permanent >/dev/null 2>\&1 \|\| true|' 'delete_ufw_rule allow in proto'
+apply_sed "$B/omarchy-remove-service-sunshine" 's|delete_ufw_rule allow in on tailscale0 to any port "$port" proto "$proto"|sudo firewall-cmd --remove-port="$port"/"$proto" --permanent >/dev/null 2>\&1 \|\| true|' 'delete_ufw_rule allow in on tailscale0'
+apply_sed "$B/omarchy-remove-service-sunshine" 's|sudo ufw reload|sudo firewall-cmd --reload|' 'sudo ufw reload'
+
+apply_sed "$B/omarchy-setup-security-sshd" 's|omarchy-cmd-missing ufw|omarchy-cmd-missing firewall-cmd|' 'omarchy-cmd-missing ufw'
+apply_sed "$B/omarchy-setup-security-sshd" 's|sudo ufw limit 22/tcp.*|sudo firewall-cmd --add-service=ssh --permanent >/dev/null|' 'sudo ufw limit 22/tcp'
+apply_sed "$B/omarchy-setup-security-sshd" 's|sudo ufw reload.*|sudo firewall-cmd --reload >/dev/null|' 'sudo ufw reload'
+
+apply_sed "$B/omarchy-remove-security-sshd" 's|omarchy-cmd-present ufw|omarchy-cmd-present firewall-cmd|' 'omarchy-cmd-present ufw'
+apply_sed "$B/omarchy-remove-security-sshd" 's|sudo ufw --force delete limit 22/tcp.*|sudo firewall-cmd --remove-service=ssh --permanent >/dev/null 2>\&1 \|\| true|' 'sudo ufw --force delete limit 22/tcp'
+apply_sed "$B/omarchy-remove-security-sshd" 's|sudo ufw reload.*|sudo firewall-cmd --reload >/dev/null|' 'sudo ufw reload'
+
+# --- SYSTEMD ---
+echo "[8/12] Systemd units..."
+apply_sed "$OMARCHY/default/systemd/user/omarchy-migrate-notify.service" 's|pacman writes|dnf writes|' 'pacman writes'
+
+# --- DEV-PKG-TEST ---
+echo "[9/12] Dev package test..."
+if [[ -f "$PATCH_DIR/omarchy-dev-pkg-test" ]]; then
+  cp "$OMARCHY/bin/omarchy-dev-pkg-test" "$OMARCHY/bin/omarchy-dev-pkg-test.arch-bak" 2>/dev/null || true
+  cp "$PATCH_DIR/omarchy-dev-pkg-test" "$OMARCHY/bin/omarchy-dev-pkg-test"
+  chmod +x "$OMARCHY/bin/omarchy-dev-pkg-test"
+else
+  echo "  WARNING: dev-pkg-test patch not found in $PATCH_DIR"
+fi
+
+# --- SKILL ---
+echo "[10/12] Skill docs..."
+S="$OMARCHY/default/omarchy-skill/SKILL.md"
+apply_sed "$S" 's|opinionated Arch Linux|opinionated Fedora Linux|' 'opinionated Arch Linux'
+apply_sed "$S" 's|\*\*Arch Linux\*\*|**Fedora Linux**|' '\*\*Arch Linux\*\*'
+apply_sed "$S" 's|pre-refresh-pacman.d/|pre-refresh-repos.d/|' 'pre-refresh-pacman.d/'
+apply_sed "$S" 's|omarchy pkg aur add <pkgs\.\.\.>.*for AUR-only packages|omarchy pkg add <pkgs...> for COPR packages|' 'pkg aur add'
+
+# --- HOOK SAMPLE ---
+echo "[11/12] Hook samples..."
+HOOK_SAMPLE="$OMARCHY/config/omarchy/hooks/pre-refresh-pacman.d/add-custom-repo.sample"
+cat > "$HOOK_SAMPLE" << 'HOOK'
+#!/bin/bash
+
+# This hook is called by `omarchy refresh pacman` AFTER the channel template
+# is refreshed and BEFORE the package cache is updated. Use it to add custom
+# COPR repositories or extra exclude rules.
+#
+# The hook runs as the invoking user with a warm sudo cache.
+#
+# To put it into use, remove .sample from this file name.
+
+# Example: add a custom COPR repo
+# sudo dnf copr enable -y user/repo
+
+# Example: exclude a package from updates
+# echo "exclude=broken-package" | sudo tee -a /etc/dnf/dnf.conf
+HOOK
+chmod +x "$HOOK_SAMPLE"
+
+# --- DOCUMENTATION ---
+echo "[12/12] Documentation..."
+D="$OMARCHY"
+# AGENTS.md
+apply_sed "$D/AGENTS.md" 's|Raw `command -v`, `pacman`, and `pacman-key` are acceptable in package-helper contexts|Raw `command -v`, `dnf`, and `rpm` are acceptable in package-helper contexts|' 'pacman.*pacman-key'
+apply_sed "$D/AGENTS.md" 's|install packages (handles both pacman and AUR)|install packages (handles dnf and COPR)|' 'pacman and AUR'
+apply_sed "$D/AGENTS.md" 's|use this instead of raw `pacman -R\*`|use this instead of raw `dnf remove`|' 'pacman -R'
+apply_sed "$D/AGENTS.md" 's|Migrations may use raw `pacman`, `command -v`|Migrations may use raw `dnf`, `rpm`, `command -v`|' 'raw `pacman`'
+
+# file-layout.md
+FL="$D/docs/file-layout.md"
+apply_sed "$FL" 's|Two Arch packages are built from this one repo (PKGBUILDs live in|Two Fedora packages are built from this one repo (spec files live in|' 'Arch packages.*PKGBUILDs'
+apply_sed "$FL" 's|`omarchy-keyring` (GPG keys for pacman)|`omarchy-keyring` (GPG keys for dnf)|' 'GPG keys for pacman'
+apply_sed "$FL" "s|Arch's \`useradd -m\` copies|Fedora's \`useradd -m\` copies|" "Arch's.*useradd"
+apply_sed "$FL" "s|are owned by upstream Arch packages|are owned by upstream Fedora packages|" "upstream Arch packages"
+apply_sed "$FL" 's|them via pacman without a file conflict|them via dnf without a file conflict|' 'via pacman without'
+apply_sed "$FL" 's|This is documented in the PKGBUILD.|This is documented in the spec file.|' 'documented in the PKGBUILD'
+apply_sed "$FL" 's|watcher cannot tell a bypassed `pacman -Syu`|watcher cannot tell a bypassed `dnf upgrade`|' 'bypassed.*pacman -Syu'
+apply_sed "$FL" 's|waits for any active pacman transaction|waits for any active dnf transaction|' 'active pacman transaction'
+apply_sed "$FL" 's|final pacman/udev/localdb passes|final dnf/udev/localdb passes|' 'final pacman/udev'
+apply_sed "$FL" 's|in `omarchy-settings` PKGBUILD|in `omarchy-settings` spec file|g' 'PKGBUILD'
+
+# migrations.md
+MM="$D/docs/migrations.md"
+apply_sed "$MM" 's|state that pacman cannot safely own|state that dnf cannot safely own|' 'pacman cannot safely own'
+apply_sed "$MM" 's|waits for any active pacman transaction|waits for any active dnf transaction|' 'active pacman transaction'
+apply_sed "$MM" 's|OMARCHY_ALLOW_DIRECT_PACMAN=1 pacman|OMARCHY_ALLOW_DIRECT_DNF=1 dnf|g' 'OMARCHY_ALLOW_DIRECT_PACMAN'
+
+# update-process.md
+UP="$D/docs/update-process.md"
+if [[ -f "$UP" ]]; then
+  apply_sed "$UP" 's|sudo pacman -Syu|sudo dnf upgrade|g' 'sudo pacman -Syu'
+  apply_sed "$UP" 's|after pacman finishes|after dnf finishes|g' 'after pacman finishes'
+  apply_sed "$UP" 's|by the pacman guard|by the dnf guard|g' 'the pacman guard'
+  apply_sed "$UP" 's|## Raw pacman guard|## Raw dnf guard|' 'Raw pacman guard'
+  apply_sed "$UP" 's|ALPM pre-transaction hook|dnf pre-transaction hook|g' 'ALPM pre-transaction'
+  apply_sed "$UP" 's|/usr/share/libalpm/hooks/|/etc/dnf/plugins/|g' '/usr/share/libalpm/hooks/'
+  apply_sed "$UP" 's|pacman --sync --refresh --sysupgrade|dnf upgrade --refresh|g' 'pacman --sync'
+  apply_sed "$UP" 's|OMARCHY_UPDATE_PACMAN=1 pacman|OMARCHY_UPDATE_DNF=1 dnf|g' 'OMARCHY_UPDATE_PACMAN'
+  apply_sed "$UP" 's|OMARCHY_ALLOW_DIRECT_PACMAN=1 pacman|OMARCHY_ALLOW_DIRECT_DNF=1 dnf|g' 'OMARCHY_ALLOW_DIRECT_PACMAN'
+  apply_sed "$UP" 's|ALPM hooks for `omarchy-settings`|dnf plugins for `omarchy-settings`|' 'ALPM hooks for'
+  apply_sed "$UP" 's|pacman guard scope|dnf guard scope|g' 'Pacman guard scope'
+  apply_sed "$UP" 's|Pacnew/pacsave handling|rpmsave handling|' 'Pacnew/pacsave'
+  apply_sed "$UP" 's|`.pacnew` and `.pacsave`|`.rpmsave` and `.rpmnew`|g' '\.pacnew.*\.pacsave'
+  apply_sed "$UP" 's|`omarchy-refresh-pacman`|`omarchy-refresh-repos`|g' 'omarchy-refresh-pacman'
+  apply_sed "$UP" 's|Arch keyring|Fedora keyring|g' 'Arch keyring'
+  apply_sed "$UP" 's|pacman -Sy|dnf install|g' 'pacman -Sy'
+  apply_sed "$UP" 's|AUR packages with `yay -Sua`|COPR packages|' 'AUR packages.*yay'
+  apply_sed "$UP" 's|currently initramfs generation|currently dracut initramfs generation|' 'currently initramfs'
+  apply_sed "$UP" 's|Pacman guard scope|dnf guard scope|' 'Pacman guard scope'
+  apply_sed "$UP" 's|Direct pacman updates|Direct dnf updates|g' 'Direct pacman updates'
+  apply_sed "$UP" 's|cannot distinguish a bypassed `pacman -Syu`|cannot distinguish a bypassed `dnf upgrade`|' 'bypassed.*pacman -Syu'
+  apply_sed "$UP" 's|Direct `sudo pacman -Syu`|Direct `sudo dnf upgrade`|g' 'Direct.*sudo pacman -Syu'
+  apply_sed "$UP" 's|Package-time migration runners do not apply migrations inside pacman|Package-time migration runners do not apply migrations inside dnf|' 'inside pacman'
+fi
+
+echo -e "\e[32mFedora patches applied.\e[0m"

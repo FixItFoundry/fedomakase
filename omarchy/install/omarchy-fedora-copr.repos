@@ -1,0 +1,10 @@
+# Fedora COPR Repositories & Flathub Configuration
+
+# Solopasha Hyprland Stack (Hyprland, Waybar, SwayNC, Hyprlock, Hypridle, etc.)
+nett00n/hyprland
+
+# Ghostty Terminal (optional but in base manifest)
+scottames/ghostty
+
+# Flathub Repository URL for Desktop Flatpak Apps
+FLATHUB_URL=https://dl.flathub.org/repo/flathub.flatpakrepo

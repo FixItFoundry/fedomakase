@@ -1,0 +1,78 @@
+#!/bin/bash
+
+# omarchy:summary=Set the Omarchy package channel.
+# omarchy:args=<stable|dev>
+# omarchy:requires-sudo=true
+
+set -euo pipefail
+
+usage() { echo "Usage: omarchy-channel-set [stable|dev]"; }
+fail() { echo "Error: $*" >&2; exit 1; }
+
+confirm_dev() {
+  cat <<'WARNING'
+
+The dev channel links Omarchy directly to a checkout of the source in ~/omarchy.
+It's exclusively intended for developers working on Omarchy itself.
+
+WARNING
+
+  gum confirm --default=false "Switch to dev channel?"
+}
+
+validate_dev_checkout() {
+  local checkout="$1"
+
+  if [[ -e $checkout && ! -d $checkout/.git ]]; then
+    fail "$checkout already exists and is not a git checkout."
+  fi
+
+  if [[ -d $checkout/.git && ( ! -d $checkout/bin || ! -d $checkout/default || ! -d $checkout/shell ) ]]; then
+    fail "$checkout is a git checkout, but it does not look like Omarchy."
+  fi
+}
+
+link_dev_checkout() {
+  local checkout="$1"
+  [[ -d $checkout/.git ]] || git clone https://github.com/basecamp/omarchy.git "$checkout"
+
+  omarchy-dev-link "$checkout" --no-reboot
+}
+
+(( $# > 0 )) || { usage; exit 1; }
+
+dev_checkout=""
+channel="$1"
+
+case "$channel" in
+  stable)
+    echo "Fedora port currently supports the stable channel."
+    ;;
+  dev)
+    confirm_dev || { echo "Cancelled."; exit 0; }
+    dev_checkout="$HOME/omarchy"
+    validate_dev_checkout "$dev_checkout"
+    ;;
+  *)
+    echo "Unknown channel: $channel" >&2
+    echo "Fedora port supports: stable, dev" >&2
+    usage >&2
+    exit 1
+    ;;
+esac
+
+if [[ -z $dev_checkout && $OMARCHY_PATH != "/usr/share/omarchy" ]]; then
+  omarchy-dev-unlink --no-reboot
+  export OMARCHY_PATH=/usr/share/omarchy
+  omarchy-state set reboot-required
+fi
+
+if [[ -n $dev_checkout ]]; then
+  link_dev_checkout "$dev_checkout"
+  export OMARCHY_PATH="$dev_checkout"
+  export PATH="$OMARCHY_PATH/bin:$PATH"
+  omarchy-state set reboot-required
+fi
+
+omarchy-refresh-pacman
+omarchy-update -y

@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# omarchy:summary=Print the active Omarchy package channel
+
+set -euo pipefail
+
+# Dev is a linked source checkout: OMARCHY_PATH points somewhere other than
+# the package-backed install at /usr/share/omarchy.
+if [[ $OMARCHY_PATH != "/usr/share/omarchy" ]]; then
+  echo dev
+  exit 0
+fi
+
+# On Fedora, channels are determined by COPR repo enablement.
+# For the initial port, only stable is supported.
+if rpm -q omarchy-fedora &>/dev/null || rpm -q omarchy &>/dev/null; then
+  echo stable
+else
+  echo unknown
+fi

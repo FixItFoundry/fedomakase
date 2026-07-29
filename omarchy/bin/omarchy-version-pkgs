@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# omarchy:summary=Print when system packages were last upgraded
+
+last_dnf=$(dnf history list --reverse 2>/dev/null | tail -1 | awk '{print $4, $5}')
+if [[ -n $last_dnf ]]; then
+  date -d "$last_dnf" "+%A, %B %d %Y at %H:%M" 2>/dev/null || echo "$last_dnf"
+else
+  rpm -qa --last | head -1 | awk '{print $2, $3, $4, $5, $6}'
+fi

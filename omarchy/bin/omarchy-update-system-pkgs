@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# omarchy:summary=Update system packages with dnf and flatpak
+# omarchy:requires-sudo=true
+
+set -e
+
+echo -e "\e[32m\nUpdate system packages (Fedora DNF & Flatpak)\e[0m"
+
+if (( EUID == 0 )); then
+  dnf upgrade --refresh -y
+else
+  sudo dnf upgrade --refresh -y
+fi
+
+if omarchy-cmd-present flatpak; then
+  flatpak update -y
+fi

@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# This hook is called by `omarchy refresh pacman` AFTER the channel template
+# is refreshed and BEFORE the package cache is updated. Use it to add custom
+# COPR repositories or extra exclude rules.
+#
+# The hook runs as the invoking user with a warm sudo cache.
+#
+# To put it into use, remove .sample from this file name.
+
+# Example: add a custom COPR repo
+# sudo dnf copr enable -y user/repo
+
+# Example: exclude a package from updates
+# echo "exclude=broken-package" | sudo tee -a /etc/dnf/dnf.conf

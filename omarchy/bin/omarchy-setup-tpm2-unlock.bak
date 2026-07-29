@@ -1,0 +1,34 @@
+#!/bin/bash
+
+# omarchy:summary=Bind LUKS encrypted drive to TPM2 chip for passphrase-less automatic boot
+# omarchy:requires-sudo=true
+
+set -e
+
+echo -e "\e[32m=== Omarchy TPM2 Auto-Unlock Setup ===\e[0m"
+
+# Find LUKS device
+luks_dev=$(lsblk -o NAME,FSTYPE -dn | grep crypto_LUKS | awk '{print $1}' | head -n 1)
+
+if [[ -z "$luks_dev" ]]; then
+  echo -e "\e[31mNo LUKS encrypted partition found on this system.\e[0m"
+  exit 1
+fi
+
+target_path="/dev/$luks_dev"
+echo "Found LUKS partition: $target_path"
+
+if ! omarchy-cmd-exists systemd-cryptenroll; then
+  echo "Installing systemd-cryptenroll..."
+  sudo dnf install -y systemd-udev systemd
+fi
+
+echo "Binding LUKS volume to hardware TPM2 chip (PCRs 0+7)..."
+sudo systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+7 "$target_path"
+
+# Update crypttab if needed
+if [[ -f /etc/crypttab ]]; then
+  sudo sed -i 's/tpm2-device=off/tpm2-device=auto/g' /etc/crypttab
+fi
+
+echo -e "\e[32mTPM2 Auto-Unlock successfully configured! Your system will now automatically decrypt at boot.\e[0m"

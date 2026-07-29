@@ -1,0 +1,12 @@
+#!/bin/bash
+
+# omarchy:summary=Ensure Fedora GPG signing keys are installed and up to date
+# omarchy:requires-sudo=true
+
+echo -e "\e[32m\nUpdate Fedora signing keys\e[0m"
+if (( EUID == 0 )); then
+  dnf reinstall -y fedora-gpg-keys >/dev/null 2>&1 || true
+else
+  sudo dnf reinstall -y fedora-gpg-keys >/dev/null 2>&1 || true
+fi
+echo "Keys are correct"

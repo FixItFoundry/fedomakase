@@ -1,0 +1,12 @@
+#!/bin/bash
+
+# omarchy:summary=Print the active Omarchy mirror and package channel
+
+# On Fedora, channels map to COPR repo enablement.
+# For now, the Fedora port only ships on the stable channel.
+if [[ $OMARCHY_PATH != "/usr/share/omarchy" ]]; then
+  echo "dev"
+  exit 0
+fi
+
+echo "stable"

@@ -1,0 +1,34 @@
+#!/bin/bash
+
+# omarchy:summary=Print the installed Omarchy version
+
+omarchy_path=${OMARCHY_PATH:-/usr/share/omarchy}
+omarchy_path=${omarchy_path%/}
+
+if [[ $omarchy_path != "/usr/share/omarchy" ]]; then
+  hash=$(git -C "$omarchy_path" rev-parse --short HEAD 2>/dev/null || true)
+
+  if [[ -n $hash ]]; then
+    echo "dev ($hash)"
+  else
+    echo "dev"
+  fi
+
+  exit 0
+fi
+
+# Try reading the version file first
+if [[ -f "$omarchy_path/version" ]]; then
+  cat "$omarchy_path/version"
+  exit 0
+fi
+
+# Try RPM package query
+version=$(rpm -q --qf '%{VERSION}-%{RELEASE}' omarchy-fedora 2>/dev/null || rpm -q --qf '%{VERSION}-%{RELEASE}' omarchy 2>/dev/null || true)
+if [[ -n $version ]]; then
+  echo "$version"
+  exit 0
+fi
+
+echo "unknown"
+exit 1

@@ -1,0 +1,17 @@
+#!/bin/bash
+
+# omarchy:summary=Reinstall all default Omarchy packages from the Fedora repos
+# omarchy:requires-sudo=true
+
+set -e
+
+# Refresh DNF metadata
+omarchy-refresh-pacman
+
+# Ensure all packages from the Fedora base list are installed
+mapfile -t packages < <(grep -v '^#' "$OMARCHY_PATH/install/omarchy-fedora-base.packages" | grep -v '^$')
+if (( EUID == 0 )); then
+  dnf install -y --allowerasing "${packages[@]}"
+else
+  sudo dnf install -y --allowerasing "${packages[@]}"
+fi

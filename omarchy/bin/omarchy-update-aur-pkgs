@@ -1,0 +1,6 @@
+#!/bin/bash
+
+# omarchy:summary=Update AUR packages (No-op on Fedora)
+
+# Fedora uses DNF and Flatpak instead of AUR.
+exit 0

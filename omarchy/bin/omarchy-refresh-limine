@@ -1,0 +1,26 @@
+#!/bin/bash
+
+# omarchy:summary=Refresh the bootloader configuration (GRUB2 on Fedora).
+# omarchy:requires-sudo=true
+
+if command -v limine-update &>/dev/null; then
+  # Limine bootloader (Arch-native path)
+  if [[ -f /boot/EFI/Linux/omarchy_linux.efi ]] && [[ -f /boot/EFI/Linux/$(cat /etc/machine-id)_linux.efi ]]; then
+    echo "Cleanup extra UKI"
+    sudo rm -f /boot/EFI/Linux/$(cat /etc/machine-id)_linux.efi
+  fi
+  echo "Resetting limine config"
+  sudo mv /boot/limine.conf /boot/limine.conf.bak
+  sudo cp "$OMARCHY_PATH/default/limine/limine.conf" /boot/limine.conf
+  sudo limine-update
+  sudo limine-snapper-sync
+else
+  # GRUB2 bootloader (Fedora path)
+  echo "Regenerating GRUB2 configuration..."
+  if (( EUID == 0 )); then
+    grub2-mkconfig -o /boot/grub2/grub.cfg 2>/dev/null || grub2-mkconfig -o /boot/efi/EFI/fedora/grub.cfg 2>/dev/null || true
+  else
+    sudo grub2-mkconfig -o /boot/grub2/grub.cfg 2>/dev/null || sudo grub2-mkconfig -o /boot/efi/EFI/fedora/grub.cfg 2>/dev/null || true
+  fi
+  echo "GRUB2 configuration refreshed."
+fi

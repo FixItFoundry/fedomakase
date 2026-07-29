@@ -1,0 +1,220 @@
+# Omarchy Fedora Core Package List (RPM & COPR)
+
+# Hyprland Ecosystem & Desktop
+hyprland
+hyprpaper
+hyprlock
+hypridle
+waybar
+rofi-wayland
+swaync
+slurp
+grim
+wl-clipboard
+brightnessctl
+pamixer
+wireplumber
+pipewire
+pipewire-utils
+xdg-dbus-proxy
+xdg-desktop-portal
+xdg-desktop-portal-gnome
+xdg-desktop-portal-gtk
+xdg-desktop-portal-hyprland
+xdg-desktop-portal-wlr
+xdg-native-messaging-proxy
+xdg-user-dirs
+xdg-user-dirs-gtk
+xdg-utils
+sddm
+qt6-qtwayland
+qt6-qtdeclarative
+qt6-qt5compat
+qt6-qtsvg
+hyprpicker
+hyprsunset
+plymouth
+power-profiles-daemon
+lxpolkit
+
+# Web Browsers
+chromium
+firefox
+
+# Terminals & Shell Utilities
+alacritty
+ghostty
+kitty
+foot
+neovim
+btop
+fastfetch
+fzf
+ripgrep
+fd-find
+eza
+zoxide
+tmux
+gum
+bat
+git
+starship
+zsh
+bash-completion
+
+# GUI Applications & Desktop Utilities
+nautilus
+evince
+loupe
+imv
+mpv
+mpv-mpris
+gnome-disk-utility
+gnome-calculator
+flatpak
+kdenlive
+obs-studio
+pinta
+xournalpp
+sushi
+libreoffice-writer
+nautilus-python
+gvfs-mtp
+gvfs-nfs
+gvfs-smb
+ffmpegthumbnailer
+ImageMagick
+gnome-keyring
+libsecret
+udiskie
+inotify-tools
+inxi
+dua-cli
+
+# Printing & Scanning
+cups
+cups-browsed
+cups-filters
+cups-pdf
+system-config-printer
+
+# Input Methods
+fcitx5
+fcitx5-gtk
+fcitx5-qt
+
+# Audio
+alsa-utils
+pavucontrol
+
+# Filesystems & Storage
+dosfstools
+exfatprogs
+
+# Network & Connectivity
+NetworkManager
+NetworkManager-wifi
+NetworkManager-bluetooth
+avahi
+nss-mdns
+bluez
+bluez-tools
+# bluez-firmware (part of linux-firmware)
+bolt
+socat
+whois
+wireless-regdb
+wpa_supplicant
+iwd
+
+# Firmware, Wi-Fi & Hardware Drivers
+linux-firmware
+kernel-modules-extra
+# iwl7260-firmware (part of iwlwifi-*-firmware)
+iwlwifi-dvm-firmware
+iwlwifi-mvm-firmware
+realtek-firmware
+alsa-firmware
+
+# System Utilities
+jq
+util-linux-script
+unzip
+tar
+xz
+# p7zip (not available in Fedora repos; use unzip, tar, xz instead)
+ca-certificates
+less
+man-db
+plocate
+tldr
+tree-sitter-cli
+fakeroot
+tesseract
+tesseract-langpack-eng
+yt-dlp
+
+# Developer Toolchain & Containers
+gcc
+gcc-c++
+make
+clang
+llvm
+ruby
+lua
+luarocks
+python3
+python3-pip
+python3-gobject
+python3-poetry-core
+moby-engine
+docker-compose
+docker-buildx
+rust
+
+# Database Client Libraries
+mariadb-connector-c
+libpq
+libyaml
+
+# Qt Theme Engine
+kvantum-qt5
+
+# Wayland Infrastructure
+uwsm
+quickshell
+wtype
+xdg-terminal-exec
+qemu-user-static
+
+# Fonts & Icon Sets
+google-noto-fonts-common
+google-noto-emoji-fonts
+google-noto-sans-fonts
+google-noto-sans-cjk-fonts
+jetbrains-mono-fonts-all
+yaru-icon-theme
+
+# Added missing dependencies from Arch Omarchy
+gnome-themes-extra
+lazygit
+compat-lua
+dotnet-runtime-8.0
+qt5-qtwayland
+fontawesome-fonts
+firewalld
+
+# COPR / Custom packages
+hyprland-guiutils
+hyprland-preview-share-picker
+#omacut
+#omawrite
+#omarchy-nvim
+#tensaku
+#tobi-try
+#ttf-ia-writer
+#aether
+#cliamp
+#usage
+#tzupdate
+#ttf-jetbrains-mono-nerd-basic

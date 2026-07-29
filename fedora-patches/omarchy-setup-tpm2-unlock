@@ -1,0 +1,79 @@
+#!/bin/bash
+
+# omarchy:summary=Bind LUKS encrypted drive to TPM2 chip for passphrase-less automatic boot
+# omarchy:requires-sudo=true
+# omarchy:args=
+# omarchy:examples=omarchy setup tpm2-unlock
+
+set -euo pipefail
+
+echo -e "\e[32m=== Omarchy TPM2 Auto-Unlock Setup ===\e[0m"
+
+# Find LUKS device
+luks_dev=$(lsblk -o NAME,FSTYPE -dn | grep crypto_LUKS | awk '{print $1}' | head -n 1)
+
+if [[ -z $luks_dev ]]; then
+  echo -e "\e[31mNo LUKS encrypted partition found on this system.\e[0m"
+  exit 1
+fi
+
+target_path="/dev/$luks_dev"
+echo "Found LUKS partition: $target_path"
+
+# Verify TPM2 is available
+if [[ ! -e /dev/tpmrm0 ]] && [[ ! -e /dev/tpm0 ]]; then
+  echo -e "\e[31mNo TPM device found. Ensure TPM2 is enabled in BIOS.\e[0m"
+  exit 1
+fi
+
+if [[ -f /sys/class/tpm/tpm0/tpm_version_major ]]; then
+  tpm_ver=$(cat /sys/class/tpm/tpm0/tpm_version_major)
+  if [[ $tpm_ver != "2" ]]; then
+    echo -e "\e[31mTPM version $tpm_ver detected — this script requires TPM 2.0.\e[0m"
+    echo "Enable TPM2 in BIOS settings, then re-run."
+    exit 1
+  fi
+elif [[ ! -e /dev/tpmrm0 ]]; then
+  echo -e "\e[31mTPM resource manager not found — TPM2 may not be available.\e[0m"
+  exit 1
+fi
+
+# Enroll key
+echo "Binding LUKS volume to hardware TPM2 chip (PCRs 0+7)..."
+if ! systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+7 "$target_path"; then
+  echo -e "\e[31mTPM2 enrollment failed. A LUKS passphrase may be needed.\e[0m"
+  exit 1
+fi
+
+# Configure dracut to include TPM2 support in initramfs
+echo "Configuring dracut for TPM2 boot support..."
+sudo mkdir -p /etc/dracut.conf.d
+echo 'add_dracutmodules+=" tpm2-tss "' | sudo tee /etc/dracut.conf.d/tpm2.conf > /dev/null
+
+# Clean up legacy keyfile config (TPM 1.2 fallback, no longer needed)
+if [[ -f /etc/dracut.conf.d/omarchy-keyfile.conf ]]; then
+  echo "Removing legacy keyfile dracut config..."
+  sudo rm -f /etc/dracut.conf.d/omarchy-keyfile.conf
+fi
+
+# Update crypttab to use TPM2
+if [[ -f /etc/crypttab ]]; then
+  luks_uuid=$(cryptsetup luksUUID "$target_path")
+  if [[ -n $luks_uuid ]] && grep -q "$luks_uuid" /etc/crypttab 2>/dev/null; then
+    if ! grep -q "tpm2-device=auto" /etc/crypttab; then
+      echo "Adding tpm2-device=auto to crypttab..."
+      sudo sed -i "/$luks_uuid/s/[[:space:]]*$/ tpm2-device=auto/" /etc/crypttab
+    fi
+  fi
+fi
+
+# Rebuild initramfs
+echo "Rebuilding initramfs..."
+sudo dracut -f
+
+echo -e "\e[32mTPM2 Auto-Unlock successfully configured!\e[0m"
+echo "  LUKS partition: $target_path"
+echo "  PCRs: 0+7"
+echo "  Initramfs: TPM2 support added"
+echo ""
+echo "Reboot to verify automatic unlock."

@@ -1,0 +1,21 @@
+#!/bin/bash
+
+# omarchy:summary=Add the named packages to the system from COPR/Fedora repos if they're missing. Returns false if it couldn't be done.
+# omarchy:args=<packages...>
+
+if omarchy-pkg-missing "$@"; then
+  if (( EUID == 0 )); then
+    dnf install -y "$@" || exit 1
+  else
+    sudo dnf install -y "$@" || exit 1
+  fi
+fi
+
+for pkg in "$@"; do
+  if ! rpm -q "$pkg" &>/dev/null; then
+    echo -e "\033[31mError: Package '$pkg' did not install\033[0m" >&2
+    exit 1
+  fi
+done
+
+exit 0

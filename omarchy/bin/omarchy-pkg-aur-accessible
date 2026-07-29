@@ -1,0 +1,6 @@
+#!/bin/bash
+
+# omarchy:summary=Returns true if COPR/Fedora repos are accessible.
+
+curl -sf --connect-timeout 30 --retry 3 --retry-delay 3 -A "omarchy-update" \
+  "https://copr-be.cloud.fedoraproject.org/results/solopasha/hyprland/" >/dev/null

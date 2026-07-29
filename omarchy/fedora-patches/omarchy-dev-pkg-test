@@ -1,0 +1,130 @@
+#!/bin/bash
+
+# omarchy:summary=Build and install an Omarchy package from a local checkout
+# omarchy:group=dev
+# omarchy:args=[package-name] [path-to-checkout]
+# omarchy:examples=omarchy dev pkg-test | omarchy dev pkg-test omarchy-dev ~/Work/omarchy/omarchy-installer
+
+set -euo pipefail
+
+if [[ ${1:-} == "-h" || ${1:-} == "--help" ]]; then
+  cat <<USAGE
+Usage: omarchy dev pkg-test [package-name] [path-to-checkout]
+
+Builds and installs an Omarchy package from a local Omarchy source
+checkout. Use when changes need to land at fixed system paths (/etc/,
+/usr/lib/systemd/, udev rule bodies, plymouth) that omarchy-dev-link
+can't shadow.
+
+Defaults:
+  packages          omarchy-settings-dev omarchy-dev
+  path-to-checkout  ~/Work/omarchy/omarchy-installer
+
+Examples:
+  omarchy dev pkg-test
+  omarchy dev pkg-test omarchy-settings-dev
+  omarchy dev pkg-test omarchy-dev ~/Work/omarchy/omarchy-installer
+
+The Version of the built package is tagged 'dev.<short-sha>[.dirty]' so
+'rpm -q' makes it obvious where the installed version came from.
+
+Spec files are read from \${OMARCHY_SPECS_DIR:-~/Work/omarchy/omarchy-pkgs/specs}/<package-name>/.
+USAGE
+  exit 0
+fi
+
+remove_version_function() {
+  local spec="$1"
+  local tmp="$spec.tmp"
+
+  awk '
+    /^%changelog/ {
+      print
+      exit
+    }
+    { print }
+  ' "$spec" >"$tmp"
+  mv "$tmp" "$spec"
+}
+
+dev_package_name() {
+  local pkg="$1"
+
+  case "$pkg" in
+    omarchy | omarchy-settings)
+      printf '%s-dev\n' "$pkg"
+      ;;
+    *)
+      printf '%s\n' "$pkg"
+      ;;
+  esac
+}
+
+if (( $# == 0 )); then
+  PKGS=(omarchy-settings-dev omarchy-dev)
+  CHECKOUT="$HOME/Work/omarchy/omarchy-installer"
+  RPMBUILD_ARGS=()
+else
+  PKGS=("$(dev_package_name "$1")")
+  CHECKOUT="${2:-$HOME/Work/omarchy/omarchy-installer}"
+  RPMBUILD_ARGS=("${@:3}")
+fi
+SPECS_ROOT="${OMARCHY_SPECS_DIR:-$HOME/Work/omarchy/omarchy-pkgs/specs}"
+
+if [[ ! -d "$CHECKOUT" ]]; then
+  echo "Error: checkout not found at $CHECKOUT" >&2
+  exit 1
+fi
+for PKG in "${PKGS[@]}"; do
+  SPEC_DIR="$SPECS_ROOT/$PKG"
+  if [[ ! -f "$SPEC_DIR/$PKG.spec" ]]; then
+    echo "Error: spec file not found at $SPEC_DIR/$PKG.spec" >&2
+    echo "       Pass a different package name as arg 1, or set OMARCHY_SPECS_DIR." >&2
+    exit 1
+  fi
+done
+
+build_dir=$(mktemp -d -t omarchy-dev-pkg-test.XXXXXX)
+trap 'rm -rf "$build_dir"' EXIT
+
+# Version=dev.<sha>[.dirty] so rpm -q makes the source obvious.
+short_sha=$(git -C "$CHECKOUT" rev-parse --short HEAD 2>/dev/null || echo "local")
+dirty=""
+if [[ -d "$CHECKOUT/.git" ]] && [[ -n "$(git -C "$CHECKOUT" status --porcelain)" ]]; then
+  dirty=".dirty"
+fi
+new_version="dev.${short_sha}${dirty}"
+
+# Set up rpmbuild tree
+mkdir -p "$build_dir"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+
+for PKG in "${PKGS[@]}"; do
+  SPEC_DIR="$SPECS_ROOT/$PKG"
+  package_build_dir="$build_dir/$PKG"
+  mkdir -p "$package_build_dir"
+  cp -a "$SPEC_DIR/." "$package_build_dir/"
+
+  spec_file="$package_build_dir/$PKG.spec"
+  remove_version_function "$spec_file"
+  sed -i "s/^Version:.*/Version:        ${new_version}/" "$spec_file"
+
+  echo "Building $PKG ${new_version} from $CHECKOUT"
+  echo "  build dir: $package_build_dir"
+  echo "  spec file : $SPEC_DIR/$PKG.spec"
+  echo
+
+  (
+    cd "$package_build_dir"
+    OMARCHY_SRC="$CHECKOUT" rpmbuild -bb --define "_topdir $build_dir" \
+      --define "OMARCHY_SRC $CHECKOUT" \
+      "${RPMBUILD_ARGS[@]}" "$spec_file"
+  )
+
+  # Install the built RPM
+  built_rpm=$(ls -t "$build_dir"/RPMS/*/*.rpm 2>/dev/null | head -1)
+  if [[ -z $built_rpm ]]; then
+    echo "Error: no built RPM found in $build_dir/RPMS/" >&2
+    exit 1
+  fi
+  sudo dnf install -y "$built_rpm"
+done
