@@ -110,7 +110,7 @@ for cfg in "$BUILD_DIR/extracted/boot/grub2/grub.cfg" "$BUILD_DIR/extracted/EFI/
     sed -i 's/set timeout=.*/set timeout=1/' "$cfg"
     if ! grep -q "inst.ks=" "$cfg"; then
       # FIX: Use omarchy-ks-offline.cfg here!
-      sed -i "s|inst.stage2=hd:LABEL=[^ ]*|& inst.ks=hd:LABEL=$ISO_LABEL:/omarchy-ks-offline.cfg|g" "$cfg"
+      sed -i "s|inst.stage2=hd:LABEL=[^ ]*|& inst.ks=cdrom:/omarchy-ks-offline.cfg|g" "$cfg"
     fi
   fi
 done

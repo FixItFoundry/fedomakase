@@ -86,7 +86,7 @@ for cfg in "$BUILD_DIR/extracted/boot/grub2/grub.cfg" "$BUILD_DIR/extracted/EFI/
     sed -i 's/ inst\.ks=[^ ]*//g' "$cfg"
     sed -i 's/ inst\.text//g' "$cfg"
     # Append inst.ks= and force text mode (GUI overrides TTY switches)
-    sed -i "s|inst.stage2=hd:LABEL=[^ ]*|& inst.ks=hd:LABEL=$ISO_LABEL:/omarchy-ks.cfg inst.text|g" "$cfg"
+    sed -i "s|inst.stage2=hd:LABEL=[^ ]*|& inst.ks=cdrom:/omarchy-ks.cfg inst.text|g" "$cfg"
   fi
 done
 

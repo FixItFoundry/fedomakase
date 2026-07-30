@@ -116,7 +116,7 @@ for cfg in "$BUILD_DIR/extracted/boot/grub2/grub.cfg" "$BUILD_DIR/extracted/EFI/
     # Remove any existing inst.ks= parameter to prevent duplicates
     sed -i 's/ inst\.ks=[^ ]*//g' "$cfg"
     # Append the correct inst.ks= parameter
-    sed -i "s|inst.stage2=hd:LABEL=[^ ]*|& inst.ks=hd:LABEL=$ISO_LABEL:/omarchy-ks-offline.cfg|g" "$cfg"
+    sed -i "s|inst.stage2=hd:LABEL=[^ ]*|& inst.ks=cdrom:/omarchy-ks-offline.cfg|g" "$cfg"
   fi
 done
 
