@@ -5,7 +5,7 @@
 set -euo pipefail
 
 export TERM=linux
-COLUMNS=$(stty size < /dev/tty3 2>/dev/null | awk '{print $2}' || tput cols 2>/dev/null || echo 80)
+COLUMNS=$(tput cols 2>/dev/null || stty size 2>/dev/null | awk '{print $2}' || echo 80)
 # Fallback if stty returns empty
 [[ -z "$COLUMNS" ]] && COLUMNS=80
 
@@ -32,11 +32,24 @@ print_bold() {
 }
 
 print_art() {
-  # Logo width is 56 chars. Calculates exact padding for terminal width.
-  local pad=$(( (COLUMNS - 56) / 2 ))
+  local lines=() max_width=0
+  while IFS= read -r line; do
+    lines+=("$line")
+    local width=0
+    for ((i=0; i<${#line}; i++)); do
+      c="${line:$i:1}"
+      if [[ "$c" == $'\xe2' ]] || [[ "$c" == $'\xef' ]]; then
+        width=$((width + 2))
+      else
+        width=$((width + 1))
+      fi
+    done
+    (( width > max_width )) && max_width=$width
+  done
+  local pad=$(( (COLUMNS - max_width) / 2 ))
   (( pad < 0 )) && pad=0
   local spaces=$(printf '%*s' "$pad" '')
-  while IFS= read -r line; do
+  for line in "${lines[@]}"; do
     printf '%s\033[38;5;74m%s\033[0m\n' "$spaces" "$line"
   done
 }

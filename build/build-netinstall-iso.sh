@@ -82,10 +82,11 @@ for cfg in "$BUILD_DIR/extracted/boot/grub2/grub.cfg" "$BUILD_DIR/extracted/EFI/
   if [[ -f "$cfg" ]]; then
     sed -i 's/set default=.*/set default="0"/' "$cfg"
     sed -i 's/set timeout=.*/set timeout=1/' "$cfg"
-    # Remove any existing inst.ks= parameter to prevent duplicates
+    # Remove any existing inst.ks= or inst.text parameter to prevent duplicates
     sed -i 's/ inst\.ks=[^ ]*//g' "$cfg"
-    # Append the correct inst.ks= parameter
-    sed -i "s|inst.stage2=hd:LABEL=[^ ]*|& inst.ks=hd:LABEL=$ISO_LABEL:/omarchy-ks.cfg|g" "$cfg"
+    sed -i 's/ inst\.text//g' "$cfg"
+    # Append inst.ks= and force text mode (GUI overrides TTY switches)
+    sed -i "s|inst.stage2=hd:LABEL=[^ ]*|& inst.ks=hd:LABEL=$ISO_LABEL:/omarchy-ks.cfg inst.text|g" "$cfg"
   fi
 done
 
