@@ -1,10 +1,20 @@
 # Fedora COPR Repositories & Flathub Configuration
+#
+# Primary Hyprland stack COPR. solopasha/hyprland (the historically
+# recommended repo) is abandoned; lionheartp/Hyprland is the actively
+# maintained fork the Omarchy-on-Fedora ecosystem has standardized on.
+# Covers: hyprland, hyprland-uwsm, hyprpaper, hyprlock, hypridle,
+#         hyprpicker, hyprsunset, xdg-desktop-portal-hyprland,
+#         quickshell, uwsm, hyprland-guiutils
+lionheartp/Hyprland
 
-# Solopasha Hyprland Stack (Hyprland, Waybar, SwayNC, Hyprlock, Hypridle, etc.)
-nett00n/hyprland
-
-# Ghostty Terminal (optional but in base manifest)
+# Ghostty Terminal — REQUIRED: ghostty is in the base manifest and is NOT
+# packaged in official Fedora. Verified building for fedora-44 x86_64.
 scottames/ghostty
+
+# Fallback if lionheartp ever disappears: nett00n/hyprland (automated,
+# aarch64 too) and errornointernet/quickshell (quickshell only).
+# Note nett00n lacks hyprpicker and the hyprland-uwsm subpackage.
 
 # Flathub Repository URL for Desktop Flatpak Apps
 FLATHUB_URL=https://dl.flathub.org/repo/flathub.flatpakrepo

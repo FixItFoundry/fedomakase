@@ -5,7 +5,6 @@ hyprland
 hyprpaper
 hyprlock
 hypridle
-waybar
 rofi-wayland
 swaync
 slurp
@@ -218,3 +217,5 @@ hyprland-preview-share-picker
 #usage
 #tzupdate
 #ttf-jetbrains-mono-nerd-basic
+perl-JSON-PP
+libxkbcommon-utils
