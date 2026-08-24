@@ -3,11 +3,30 @@
 set -e
 
 # Re-apply Fedora patches after every upstream Omarchy update.
-# Upstream overwrites /usr/share/omarchy/ on each RPM update,
-# so this hook restores our Fedora-specific adaptations.
+#
+# Durability: upstream updates can replace /usr/share/omarchy wholesale,
+# destroying bin/omarchy-apply-fedora-patches and fedora-patches/.
+# The canonical copies therefore live in the user-land stash
+# (~/.local/share/fedomakase/, installed by scripts/apply.sh) and are
+# restored into place before running.
+
+STASH="$HOME/.local/share/fedomakase"
+OMARCHY="${OMARCHY_PATH:-/usr/share/omarchy}"
+RUNNER="$OMARCHY/bin/omarchy-apply-fedora-patches"
+
+if [[ ! -x $RUNNER ]]; then
+  if [[ ! -x $STASH/bin/omarchy-apply-fedora-patches ]]; then
+    echo "fedomakase: no patch runner found (run scripts/apply.sh once)" >&2
+    exit 1
+  fi
+  mkdir -p "$OMARCHY/bin" "$OMARCHY/fedora-patches"
+  cp "$STASH/bin/"* "$OMARCHY/bin/"
+  cp "$STASH/fedora-patches/"* "$OMARCHY/fedora-patches/"
+  chmod +x "$OMARCHY/bin/"*
+fi
 
 if (( EUID == 0 )); then
-  omarchy-apply-fedora-patches
+  "$RUNNER"
 else
-  sudo omarchy-apply-fedora-patches
+  sudo "$RUNNER"
 fi

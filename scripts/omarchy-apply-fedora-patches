@@ -7,6 +7,10 @@ set -e
 
 OMARCHY="${OMARCHY_PATH:-/usr/share/omarchy}"
 PATCH_DIR="${OMARCHY_FEDORA_PATCHES:-$OMARCHY/fedora-patches}"
+if [[ ! -d $PATCH_DIR ]] && [[ -d $HOME/.local/share/fedomakase/fedora-patches ]]; then
+  # System tree was overwritten by an upstream update; fall back to the stash
+  PATCH_DIR="$HOME/.local/share/fedomakase/fedora-patches"
+fi
 
 echo -e "\e[32mRe-applying Fedora patches...\e[0m"
 
@@ -42,7 +46,7 @@ if [[ -f "$PATCH_DIR/omarchy-setup-tpm2-unlock" ]]; then
   chmod +x "$OMARCHY/bin/omarchy-setup-tpm2-unlock"
 else
   echo "  WARNING: TPM patch not found at $PATCH_DIR/omarchy-setup-tpm2-unlock"
-  echo "  Run ~/Projects/Omarchy-Fedora/apply.sh to install patches."
+  echo "  Run scripts/apply.sh (from the fedomakase repo) to install patches."
 fi
 
 # --- DRACUT TPM2 CONFIG ---
@@ -78,21 +82,8 @@ if [[ -d "$OMARCHY/applications" ]]; then
   cp -rf "$OMARCHY/applications/icons" /etc/skel/.local/share/icons/ 2>/dev/null || true
 fi
 
-# --- KICKSTART ---
-echo "[6/12] Kickstart files..."
-if [[ -d "$PATCH_DIR" ]]; then
-  for ks in omarchy-ks.cfg omarchy-ks-offline.cfg; do
-    if [[ -f "$PATCH_DIR/$ks" ]]; then
-      cp "$PATCH_DIR/$ks" "$OMARCHY/installer/$ks"
-      chmod +x "$OMARCHY/installer/$ks"
-    fi
-  done
-else
-  echo "  WARNING: Kickstart patches not found in $PATCH_DIR"
-fi
-
 # --- UPDATE SCRIPTS ---
-echo "[7/12] Update scripts..."
+echo "[6/12] Update scripts..."
 apply_sed "$OMARCHY/bin/omarchy-update-firmware" 's|/boot/EFI/arch/|/boot/EFI/fedora/|' '/boot/EFI/arch/'
 apply_sed "$OMARCHY/bin/omarchy-upgrade-to-quattro" 's|designed for Arch Linux systems.|already installed as the base system on Fedora.|' 'designed for Arch Linux'
 
@@ -115,7 +106,7 @@ EOF
 chmod +x "$OMARCHY/bin/omarchy-update-analyze-logs"
 
 # --- INSTALL SCRIPTS ---
-echo "[6/11] Install scripts..."
+echo "[7/12] Install scripts..."
 B="$OMARCHY/bin"
 
 # Fedora uses 'uwsm app' instead of the 'uwsm-app' wrapper across all scripts, configs, and QML files
@@ -125,7 +116,6 @@ apply_sed "$B/omarchy-install-browser" 's|microsoft-edge-stable-bin|microsoft-ed
 apply_sed "$B/omarchy-install-browser" 's|brave-bin|brave-browser|' 'brave-bin'
 apply_sed "$B/omarchy-install-browser" 's|brave-origin-bin|brave-browser-origin|' 'brave-origin-bin'
 apply_sed "$B/omarchy-install-browser" 's|zen-browser-bin|zen|' 'zen-browser-bin'
-apply_sed "$B/omarchy-install-browser" 's|google-chrome-stable|google-chrome-stable|' 'google-chrome'
 apply_sed "$B/omarchy-install-service-nordvpn" 's|nordvpn-bin|nordvpn|' 'nordvpn-bin'
 apply_sed "$B/omarchy-install-editor-emacs" 's|via the omarchy-emacs AUR package|via COPR|' 'AUR package'
 apply_sed "$B/omarchy-install-gaming-retroarch" 's|installed by pacman|installed by dnf|' 'installed by pacman'
