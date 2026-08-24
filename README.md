@@ -6,7 +6,7 @@ An opinionated, curated Hyprland desktop environment for **Fedora Linux** — bu
 
 ## 🌟 What is Fedomakase?
 
-**Fedomakase** (*Fedora* + *Omakase*) brings the "Chef's Choice", highly-curated Hyprland desktop experience of Omarchy to the Fedora Linux ecosystem. 
+**Fedomakase** (*Fedora* + *Omakase*) brings the "Chef's Choice", highly-curated Hyprland desktop experience of Omarchy to the Fedora Linux ecosystem.
 
 While upstream Omarchy targets Arch Linux, Fedomakase ports the entire desktop experience—its keybindings, custom CLI utilities, wayland sessions, theme engines, and web app integration—directly onto **Fedora 44+**, leveraging native Fedora tooling.
 
@@ -14,49 +14,49 @@ While upstream Omarchy targets Arch Linux, Fedomakase ports the entire desktop e
 
 ## 🛠️ How It Works
 
-- **Base System**: Built on top of the official **Fedora Everything Netinstall ISO** using customized Anaconda Kickstart (`.cfg`) configurations.
-- **Package Architecture**: Replaced Arch `pacman` and `AUR` dependencies with native `dnf`, `rpm`, and Fedora `COPR` repositories (e.g. Hyprland COPR).
-- **Interactive TTY Installer**: Features a native terminal installer powered by [Gum](https://github.com/charmbracelet/gum) for disk selection, LUKS encryption, and user setup.
-- **Self-Healing Updates**: Includes a post-update hook infrastructure that automatically re-applies Fedora-specific adaptations whenever upstream Omarchy components are updated.
+- **Base System**: Built on top of the official **Fedora Everything Netinstall ISO** using a customized Anaconda Kickstart.
+- **Interactive TTY Installer**: Anaconda's `%pre` stage launches a [Gum](https://github.com/charmbracelet/gum) TUI on TTY3 for disk selection, **LUKS2 encryption**, and user setup. Choices are written to a `%include` file that drives real partitioning — there are no hardcoded credentials anywhere in the kickstart.
+- **Package Architecture**: `pacman`/`AUR` replaced with native `dnf`, `rpm`, and COPR. The ISO's `%packages` block is generated at build time from [`omarchy/install/omarchy-fedora-base.packages`](omarchy/install/omarchy-fedora-base.packages) — the single source of truth — with every package resolved against live repo metadata.
+- **Hyprland Stack**: [lionheartp/Hyprland](https://copr.fedorainfracloud.org/coprs/lionheartp/Hyprland/) COPR (the maintained fork of the abandoned solopasha repo). Covers hyprland, hyprland-uwsm, quickshell, and everything else the manifest needs.
+- **Self-Healing Updates**: A post-update hook re-applies all Fedora-specific adaptations whenever upstream Omarchy components are refreshed.
+- **TPM2 Auto-Unlock**: When LUKS is chosen and a TPM2 is present, the passphrase is enrolled against PCRs 0+7 automatically during install; dracut ships the `tpm2-tss` module.
 
-> 🚧 **Work in Progress: Custom COPR**  
-> We are actively building a dedicated **Fedomakase COPR repository** to package the few remaining non-native Omarchy binaries into official `.rpm` spec files. Until then, missing utilities are smoothly linked to native DNF/COPR alternatives.
+> 🚧 **Work in Progress: Custom COPR**
+> The few packages not yet RPM-packaged (e.g. `hyprland-preview-share-picker`) are planned for a dedicated Fedomakase COPR. Until then they are gracefully skipped by the build-time resolver.
 
 ---
 
 ## 🔧 Summary of Fixes & Adaptations
-
-Porting Omarchy from Arch Linux to Fedora required several structural adaptations:
 
 | Subsystem | Upstream (Arch) | Fedomakase (Fedora) |
 |---|---|---|
 | **Package Manager** | `pacman` / `yay` | `dnf` / `rpm` |
 | **User Repositories** | Arch User Repository (`AUR`) | Fedora `COPR` |
 | **Initramfs Generation** | `mkinitcpio` | `dracut` (with `tpm2-tss` module) |
-| **TPM Auto-Unlock** | `clevis` / legacy keyfiles | `systemd-cryptenroll` + `dracut -f` |
+| **TPM Auto-Unlock** | `systemd-cryptenroll` | `systemd-cryptenroll` + `dracut -f` (PCRs 0+7) |
 | **Firewall Management** | `ufw` | `firewalld` (`firewall-cmd`) |
 | **Wayland Application Launcher** | `uwsm-app` wrapper | `uwsm app` native execution |
 | **Default Terminal** | Manual terminal selection | `xdg-terminal-exec` pre-seeded config |
-| **Display Manager** | SDDM with custom Arch configs | SDDM with Fedora Wayland session integration |
+| **Display Manager** | SDDM with custom Arch configs | SDDM launching Hyprland through `uwsm` |
 | **Packaging Test Tool** | `PKGBUILD` / `makepkg` | `.spec` / `rpmbuild` (`omarchy-dev-pkg-test`) |
 
-For a complete line-by-line breakdown of every script, configuration, and binary modified, see [fedomakase-fixes.md](fedomakase-fixes.md).
+For the complete line-by-line breakdown of every script, configuration, and binary modified, see [fedomakase-fixes.md](fedomakase-fixes.md).
 
 ---
 
 ## 💿 ISO Building & Usage
 
-Fedomakase provides scripts to generate bootable ISOs that can be flashed to a USB drive or booted directly via [Ventoy](https://www.ventoy.net/).
+Scripts generate bootable ISOs flashable to USB or bootable via [Ventoy](https://www.ventoy.net/).
 
 ### Prerequisites
 
 - Fedora 44 (or later) host system
-- `bsdtar`, `xorriso`, `dnf`, `wget` installed
+- `bsdtar`, `rsync`, `wget`, `dnf` (network access required for package resolution)
 - Official [Fedora Everything Netinstall ISO](https://fedoraproject.org/workstation/download)
 
-### 1. Netinstall ISO (Requires internet during installation)
+### 1. Netinstall ISO (requires internet during installation)
 
-Builds a lightweight ISO (~1.3 GB) that fetches the latest packages over the network during Anaconda setup:
+Builds an ISO (~1.3 GB) that fetches latest packages over the network during Anaconda setup:
 
 ```bash
 sudo bash build/build-netinstall-iso.sh /path/to/Fedora-Everything-netinst-x86_64-44-*.iso
@@ -64,9 +64,11 @@ sudo bash build/build-netinstall-iso.sh /path/to/Fedora-Everything-netinst-x86_6
 
 **Output:** `fedomakase-44-x86_64.iso`
 
-### 2. Offline ISO (No internet required during installation)
+The build resolves every manifest package against live metadata, splices the resolved set into the kickstart, warns about unresolvable names, hard-fails if any critical package (hyprland, quickshell, sddm…) can't be found, and verifies the payload before repacking.
 
-Builds a self-contained DVD ISO (~3.2 GB) containing **1,500+ pre-mirrored Fedora & COPR packages** inside an embedded local repository:
+### 2. Offline ISO (no internet during installation) — Phase 2
+
+Builds a self-contained DVD (~3+ GB) mirroring all manifest packages into an embedded local repository:
 
 ```bash
 sudo bash build/build-offline-iso.sh /path/to/Fedora-Everything-netinst-x86_64-44-*.iso
@@ -74,19 +76,21 @@ sudo bash build/build-offline-iso.sh /path/to/Fedora-Everything-netinst-x86_64-4
 
 **Output:** `fedomakase-offline-44-x86_64.iso`
 
+> ⚠️ The offline install path still needs verification on real hardware before it can be trusted (Anaconda mount-layout assumptions).
+
 ---
 
 ## 🚀 Installing on an Existing System
 
-If you already have a Fedora system running and want to apply the Fedomakase environment and patches:
+If you already have a Fedora system running Omarchy and want the Fedomakase adaptations:
 
 ```bash
 sudo bash scripts/apply.sh
 ```
 
-This installs all configuration files, patched utilities, and registers the automatic post-update hook in `~/.config/omarchy/hooks/post-update.d/`.
+This installs the patch runner and helpers into `/usr/share/omarchy`, applies all idempotent patches once, and registers the post-update hook in `~/.config/omarchy/hooks/post-update.d/`.
 
-If you ever need to manually re-apply patches after an upstream update:
+To manually re-apply after an upstream update:
 
 ```bash
 sudo omarchy-apply-fedora-patches
@@ -97,21 +101,26 @@ sudo omarchy-apply-fedora-patches
 ## 📁 Repository Structure
 
 ```
-Omarchy-Fedora/
+fedomakase/
 ├── build/
 │   ├── build-netinstall-iso.sh    # Builds fedomakase-44-x86_64.iso
 │   └── build-offline-iso.sh       # Builds fedomakase-offline-44-x86_64.iso
-├── installer/
-│   ├── omarchy-installer.sh       # Interactive TTY installer (Gum UI)
-│   ├── omarchy-ks.cfg             # Netinstall Anaconda Kickstart
-│   └── omarchy-ks-offline.cfg     # Offline Anaconda Kickstart
-├── omarchy/                       # Embedded Omarchy payload with Fedora patches
+├── omarchy/                       # Embedded Omarchy payload (installed to /usr/share/omarchy)
+│   ├── installer/
+│   │   ├── omarchy-installer.sh   # Gum TUI run from Anaconda %pre (TTY3)
+│   │   ├── omarchy-ks.cfg         # Netinstall kickstart (canonical)
+│   │   └── omarchy-ks-offline.cfg # Offline kickstart (canonical)
+│   ├── etc/sddm.conf.d/           # SDDM uwsm session config
+│   └── install/
+│       ├── omarchy-fedora-base.packages   # Single source of truth for packages
+│       └── omarchy-fedora-copr.repos      # COPR configuration
 ├── scripts/
-│   ├── apply.sh                   # Apply Fedomakase patches to running system
-│   ├── apply-docs.sh              # Apply documentation updates
-│   └── omarchy-apply-fedora-patches  # Post-update re-application script
-├── fedomakase-fixes.md            # Detailed technical changelog of all fixes
-└── apply-fedora-patches.hook      # Automatic post-update hook
+│   ├── apply.sh                   # One-time bootstrap on a running system
+│   ├── omarchy-apply-fedora-patches  # Idempotent patch runner (post-update hook)
+│   ├── omarchy-setup-tpm2-unlock  # Standalone TPM2 enrollment helper
+│   └── omarchy-dev-pkg-test       # rpmbuild-based packaging test tool
+├── test/build-checks.sh           # Static sanity checks for the port
+└── fedomakase-fixes.md            # Detailed technical changelog
 ```
 
 ---
