@@ -1,13 +1,19 @@
 #!/bin/bash
-# Omarchy Fedora Native Interactive TTY Installer (omarchy-installer.sh)
-# Uses Gum terminal UI to generate Anaconda Kickstart configuration.
+# Fedomakase Interactive TTY Installer (omarchy-installer.sh)
+# Runs inside Anaconda's %pre on TTY3. Uses Gum to gather every install choice
+# and writes /tmp/fedomakase-part.cfg — an Anaconda include file consumed by
+# omarchy-ks.cfg via %include. Also writes /tmp/fedomakase-luks-pass when
+# encryption is selected (used once by systemd-cryptenroll in %post).
 
 set -euo pipefail
 
 export TERM=linux
 COLUMNS=$(tput cols 2>/dev/null || stty size 2>/dev/null | awk '{print $2}' || echo 80)
-# Fallback if stty returns empty
 [[ -z "$COLUMNS" ]] && COLUMNS=80
+
+PART_CFG="/tmp/fedomakase-part.cfg"
+LUKS_PASS_FILE="/tmp/fedomakase-luks-pass"
+rm -f "$PART_CFG" "$LUKS_PASS_FILE"
 
 # --- Display Helpers (ANSI-based, reliable on TTY) ---
 print_center() {
@@ -55,7 +61,7 @@ print_art() {
 }
 
 if ! command -v gum &>/dev/null; then
-  echo "Error: 'gum' is required for the Omarchy installer." >&2
+  echo "Error: 'gum' is required for the Fedomakase installer." >&2
   exit 1
 fi
 
@@ -71,10 +77,10 @@ BANNER
 echo ""
 print_center "Fedora Edition - Native Installer"
 echo ""
-print_bold 74 "Welcome to the Omarchy Fedora Interactive Installer!"
+print_bold 74 "Welcome to the Fedomakase Interactive Installer!"
 echo ""
 
-if ! gum confirm "Ready to configure Omarchy Fedora for installation?"; then
+if ! gum confirm "Ready to configure Fedomakase for installation?"; then
   print_color 204 "Installation aborted."
   exit 1
 fi
@@ -91,9 +97,8 @@ if [[ -z "$DISKS" ]]; then
   exit 1
 fi
 
-# Use mapfile + arguments instead of pipe to preserve TTY stdin for gum
 mapfile -t DISK_ARRAY <<< "$DISKS"
-SELECTED_DISK_STR=$(gum choose --header "Select the drive to install Omarchy Fedora on:" "${DISK_ARRAY[@]}") || true
+SELECTED_DISK_STR=$(gum choose --header "Select the drive to install Fedomakase on:" "${DISK_ARRAY[@]}") || true
 if [[ -z "$SELECTED_DISK_STR" ]]; then
   print_color 204 "No disk selected, aborting!"
   exit 1
@@ -102,7 +107,7 @@ fi
 TARGET_DISK=$(echo "$SELECTED_DISK_STR" | awk '{print $1}')
 TARGET_DISK_NAME=$(basename "$TARGET_DISK")
 
-if [[ -z "$TARGET_DISK" || ! -b "$TARGET_DISK" ]]; then
+if [[ ! -b "$TARGET_DISK" ]]; then
   print_color 204 "Invalid disk selected!"
   exit 1
 fi
@@ -114,15 +119,19 @@ ENCRYPT_DRIVE=false
 LUKS_PASSPHRASE=""
 
 if gum confirm "Would you like to encrypt your drive with LUKS2?"; then
-  ENCRYPT_DRIVE=true
   while true; do
     LUKS_PASSPHRASE=$(gum input --password --header "LUKS encryption passphrase:") || true
     LUKS_CONFIRM=$(gum input --password --header "Confirm LUKS passphrase:") || true
-    if [[ -n "$LUKS_PASSPHRASE" && "$LUKS_PASSPHRASE" == "$LUKS_CONFIRM" ]]; then
-      print_color 108 "Passphrase confirmed."
-      break
+    if [[ -z "$LUKS_PASSPHRASE" ]]; then
+      print_color 204 "Passphrase cannot be empty. Please try again."
+    elif [[ "$LUKS_PASSPHRASE" != "$LUKS_CONFIRM" ]]; then
+      print_color 204 "Passphrases do not match. Please try again."
+    elif [[ "$LUKS_PASSPHRASE" == *'"'* ]]; then
+      print_color 204 "Passphrase cannot contain double-quote characters. Please try again."
     else
-      print_color 204 "Passphrases do not match or are empty. Please try again."
+      print_color 108 "Passphrase confirmed."
+      ENCRYPT_DRIVE=true
+      break
     fi
   done
 fi
@@ -132,11 +141,12 @@ echo ""
 print_bold 111 "3. User Account Setup"
 
 REAL_NAME=$(gum input --header "Full Name:" --placeholder "e.g. Omarchy User" --value "Omarchy User") || true
+REAL_NAME=${REAL_NAME//\"/}
 
 USERNAME=""
 while true; do
   USERNAME=$(gum input --header "Username:" --placeholder "e.g. omarchy" --value "omarchy") || true
-  if [[ "$USERNAME" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+  if [[ "$USERNAME" =~ ^[a-z_][a-z0-9_-]*$ ]] && (( ${#USERNAME} <= 32 )); then
     break
   else
     print_color 204 "Invalid username format. Use lowercase alphanumeric characters."
@@ -147,13 +157,19 @@ USER_PASSWORD=""
 while true; do
   USER_PASSWORD=$(gum input --password --header "Enter Password for $USERNAME:") || true
   USER_PASS_CONFIRM=$(gum input --password --header "Confirm Password for $USERNAME:") || true
-  if [[ -n "$USER_PASSWORD" && "$USER_PASSWORD" == "$USER_PASS_CONFIRM" ]]; then
+  if [[ -z "$USER_PASSWORD" ]]; then
+    print_color 204 "Password cannot be empty. Please try again."
+  elif [[ "$USER_PASSWORD" != "$USER_PASS_CONFIRM" ]]; then
+    print_color 204 "Passwords do not match. Please try again."
+  else
     print_color 108 "User password confirmed."
     break
-  else
-    print_color 204 "Passwords do not match or are empty. Please try again."
   fi
 done
+
+# Hash password so nothing sensitive or quote-sensitive lands in the kickstart
+USER_HASH=$(openssl passwd -6 "$USER_PASSWORD")
+unset USER_PASSWORD USER_PASS_CONFIRM
 
 # 4. Confirmation Summary
 echo ""
@@ -169,29 +185,23 @@ if ! gum confirm "Begin installation and overwrite $TARGET_DISK now?"; then
   exit 1
 fi
 
-echo ""
-gum spin --spinner dot --title "Generating Anaconda Kickstart Configuration..." -- sleep 2
+# 5. Generate Anaconda partitioning include consumed by omarchy-ks.cfg
+{
+  echo "ignoredisk --only-use=${TARGET_DISK_NAME}"
+  echo "clearpart --all --initlabel --drives=${TARGET_DISK_NAME}"
+  if [[ $ENCRYPT_DRIVE == true ]]; then
+    echo "autopart --type=btrfs --encrypted --luks-version=luks2 --passphrase=\"${LUKS_PASSPHRASE}\""
+    printf '%s' "$LUKS_PASSPHRASE" > "$LUKS_PASS_FILE"
+    chmod 600 "$LUKS_PASS_FILE"
+  else
+    echo "autopart --type=btrfs"
+  fi
+  echo "user --name=${USERNAME} --gecos=\"${REAL_NAME}\" --groups=wheel --password=${USER_HASH}"
+} > "$PART_CFG"
+chmod 600 "$PART_CFG"
 
-# 5. Generate Kickstart Include File
-KS_INC="/tmp/omarchy-ks-include.cfg"
-
-if [[ $ENCRYPT_DRIVE == true ]]; then
-  AUTOPART_LINE="autopart --type=btrfs --encrypted --passphrase=${LUKS_PASSPHRASE}"
-  echo -n "${LUKS_PASSPHRASE}" > /tmp/omarchy-luks-pass
-else
-  AUTOPART_LINE="autopart --type=btrfs"
-fi
-
-cat > "$KS_INC" << KSEOF
-ignoredisk --only-use=${TARGET_DISK_NAME}
-zerombr
-clearpart --all --initlabel --drives=${TARGET_DISK_NAME}
-${AUTOPART_LINE}
-bootloader --timeout=1 --append="quiet"
-rootpw --lock
-user --name=${USERNAME} --gecos="${REAL_NAME}" --groups=wheel --plaintext --password="${USER_PASSWORD}"
-KSEOF
+unset LUKS_PASSPHRASE USER_HASH
 
 echo ""
-print_bold 108 "Omarchy Fedora frontend setup complete! Handing over to Anaconda..."
+print_bold 108 "Fedomakase setup complete! Handing over to Anaconda..."
 sleep 2
