@@ -60,6 +60,11 @@ CHECKS
   exit $(( MISSING > 0 ))
 fi
 
+if (( EUID != 0 )); then
+  echo "Error: run as root (sudo $0) — writes to $OMARCHY and /etc." >&2
+  exit 1
+fi
+
 # --- BINDINGS ---
 echo "[1/12] Keybinding fixes..."
 if [[ -f "$PATCH_DIR/utilities.lua" ]]; then

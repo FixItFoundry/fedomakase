@@ -56,6 +56,11 @@ CHECKS
   exit $(( MISSING > 0 ))
 fi
 
+if (( EUID != 0 )); then
+  echo "Error: run as root (sudo $0) — writes to $OMARCHY and /etc." >&2
+  exit 1
+fi
+
 # --- MENU ---
 echo "[1/10] Menu labels..."
 M="$OMARCHY/default/omarchy/omarchy-menu.jsonc"
