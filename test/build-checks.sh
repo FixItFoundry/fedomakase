@@ -103,6 +103,16 @@ check "build scripts query ghostty COPR during resolution" \
 check "build scripts query whelanh COPR during resolution" \
   bash -c "! grep -L whelanh '$REPO_DIR/build/build-netinstall-iso.sh' '$REPO_DIR/build/build-offline-iso.sh' | grep -q ."
 
+# --- apply.sh targets the invoking user (not /root) and syncs payload files ---
+check "apply.sh resolves target user home" \
+  grep -q 'TARGET_HOME' "$REPO_DIR/scripts/apply.sh"
+check "apply.sh syncs Fedora-owned helpers" \
+  bash -c "grep -q 'omarchy-refresh-repos' '$REPO_DIR/scripts/apply.sh' && grep -q 'omarchy-voxtype-install' '$REPO_DIR/scripts/apply.sh'"
+check "apply.sh syncs COPR repos + manifest" \
+  grep -q 'omarchy-fedora-copr.repos' "$REPO_DIR/scripts/apply.sh"
+check "patch runner creates hook sample dir" \
+  bash -c "grep -q 'mkdir -p \"\$(dirname \"\$HOOK_SAMPLE\")\"' '$REPO_DIR/scripts/omarchy-apply-fedora-patches'"
+
 # --- self-heal chain must survive upstream overwrites ---
 check "hook restores runner from user-land stash" \
   grep -q '.local/share/fedomakase' "$REPO_DIR/scripts/apply-fedora-patches.hook"

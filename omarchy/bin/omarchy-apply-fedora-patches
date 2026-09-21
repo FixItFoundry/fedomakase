@@ -180,6 +180,7 @@ apply_sed "$S" 's|omarchy pkg aur add <pkgs\.\.\.>.*for AUR-only packages|omarch
 # --- HOOK SAMPLE ---
 echo "[10/11] Hook samples..."
 HOOK_SAMPLE="$OMARCHY/config/omarchy/hooks/pre-refresh-repos.d/add-custom-repo.sample"
+mkdir -p "$(dirname "$HOOK_SAMPLE")"
 cat > "$HOOK_SAMPLE" << 'HOOK'
 #!/bin/bash
 
