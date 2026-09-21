@@ -62,6 +62,8 @@ check "copr repos file points at ghostty"    grep -q '^scottames/ghostty$' "$OMA
 check "copr repos file points at starship"    grep -q '^atim/starship$' "$OMARCHY/install/omarchy-fedora-copr.repos"
 check "netinstall ks includes starship COPR repo" \
   grep -q "atim/starship" "$OMARCHY/installer/omarchy-ks.cfg"
+check "copr repos file points at lazygit"    grep -q '^boobaa/lazygit$' "$OMARCHY/install/omarchy-fedora-copr.repos"
+check "manifest: lazygit present"            grep -q '^lazygit$' "$MANIFEST"
 check "apply.sh installs only resolvable packages" \
   grep -q 'not resolvable, skipping' "$REPO_DIR/scripts/apply.sh"
 check "manifest: whelanh set present" bash -c "grep -q '^omacut$' '$MANIFEST' && grep -q '^omawrite$' '$MANIFEST' && grep -q '^tensaku$' '$MANIFEST' && grep -q '^hyprland-preview-share-picker$' '$MANIFEST' && grep -q '^aether$' '$MANIFEST'"

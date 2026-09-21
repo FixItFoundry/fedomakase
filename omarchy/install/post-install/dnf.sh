@@ -12,6 +12,7 @@ if command -v dnf &>/dev/null; then
   dnf copr enable -y whelanh/omarchy 2>/dev/null || true
   dnf copr enable -y scottames/ghostty 2>/dev/null || true
   dnf copr enable -y atim/starship 2>/dev/null || true
+  dnf copr enable -y boobaa/lazygit 2>/dev/null || true
 fi
 
 # Install all base packages from the manifest (single source of truth)

@@ -21,5 +21,9 @@ scottames/ghostty
 # method is this COPR. Verified building for fedora-44 x86_64.
 atim/starship
 
+# Lazygit — not in Fedora 44 repos. Dedicated COPR tracking upstream.
+# Verified building for fedora-44 x86_64.
+boobaa/lazygit
+
 # Flathub Repository URL for Desktop Flatpak Apps
 FLATHUB_URL=https://dl.flathub.org/repo/flathub.flatpakrepo

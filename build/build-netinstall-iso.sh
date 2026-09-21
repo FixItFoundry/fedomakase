@@ -40,6 +40,7 @@ COPR_URL="https://copr-be.cloud.fedoraproject.org/results/nett00n/hyprland/fedor
 COPR_GHOSTTY_URL="https://copr-be.cloud.fedoraproject.org/results/scottames/ghostty/fedora-44-x86_64/"
 COPR_WHELANH_URL="https://copr-be.cloud.fedoraproject.org/results/whelanh/omarchy/fedora-44-x86_64/"
 COPR_STARSHIP_URL="https://copr-be.cloud.fedoraproject.org/results/atim/starship/fedora-44-x86_64/"
+COPR_LAZYGIT_URL="https://copr-be.cloud.fedoraproject.org/results/boobaa/lazygit/fedora-44-x86_64/"
 
 echo -e "\e[32m=== Starting Fedomakase Netinstall ISO Build ===\e[0m"
 
@@ -95,6 +96,7 @@ for pkg in "${MANIFEST_PKGS[@]}"; do
       --repofrompath=copr-ghostty,"$COPR_GHOSTTY_URL" --repoid=copr-ghostty \
       --repofrompath=copr-whelanh,"$COPR_WHELANH_URL" --repoid=copr-whelanh \
       --repofrompath=copr-starship,"$COPR_STARSHIP_URL" --repoid=copr-starship \
+      --repofrompath=copr-lazygit,"$COPR_LAZYGIT_URL" --repoid=copr-lazygit \
       "$pkg" &>/dev/null; then
     RESOLVED+=("$pkg")
   else
