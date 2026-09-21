@@ -17,5 +17,9 @@ whelanh/omarchy
 # packaged in official Fedora. Verified building for fedora-44 x86_64.
 scottames/ghostty
 
+# Starship prompt — not packaged in official Fedora; documented upstream
+# method is this COPR. Verified building for fedora-44 x86_64.
+atim/starship
+
 # Flathub Repository URL for Desktop Flatpak Apps
 FLATHUB_URL=https://dl.flathub.org/repo/flathub.flatpakrepo

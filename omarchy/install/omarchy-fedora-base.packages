@@ -195,8 +195,8 @@ jetbrains-mono-fonts-all
 yaru-icon-theme
 
 # Added missing dependencies from Arch Omarchy
-gnome-themes-extra
-lazygit
+# gnome-themes-extra (not in Fedora 44 repos; Adwaita+Yaru cover themes)
+# lazygit (not in Fedora 44 repos, atim/lazygit lacks f44; revisit when packaged)
 compat-lua
 dotnet-runtime-8.0
 qt5-qtwayland

@@ -34,6 +34,7 @@ ISO_LABEL="Fedora-E-dvd-x86_64-44"
 COPR_URL="https://copr-be.cloud.fedoraproject.org/results/nett00n/hyprland/fedora-44-x86_64/"
 COPR_GHOSTTY_URL="https://copr-be.cloud.fedoraproject.org/results/scottames/ghostty/fedora-44-x86_64/"
 COPR_WHELANH_URL="https://copr-be.cloud.fedoraproject.org/results/whelanh/omarchy/fedora-44-x86_64/"
+COPR_STARSHIP_URL="https://copr-be.cloud.fedoraproject.org/results/atim/starship/fedora-44-x86_64/"
 
 echo -e "\e[32m=== Starting Fedomakase Offline ISO Build ===\e[0m"
 
@@ -80,7 +81,7 @@ curl -fsSL --max-time 120 \
 
 # 5. Mirror every manifest package into the local ISO repository
 echo "[5/7] Mirroring manifest packages (fedora + updates + COPR)..."
-mapfile -t MANIFEST_PKGS < <(sed 's/#.*//' "$OMARCHY_DIR/install/omarchy-fedora-base.packages" | tr -d '[:space:]' | grep -v '^$' || true)
+mapfile -t MANIFEST_PKGS < <(sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$OMARCHY_DIR/install/omarchy-fedora-base.packages" | grep -v '^$' || true)
 (( ${#MANIFEST_PKGS[@]} > 0 )) || { echo "Error: manifest parsed to zero packages." >&2; exit 1; }
 
 REPO_DIR_TARGET="$BUILD_DIR/extracted/omarchy-repo"
@@ -94,6 +95,7 @@ for pkg in "${MANIFEST_PKGS[@]}"; do
     --repofrompath=copr-nett00n,"$COPR_URL" --repoid=copr-nett00n \
     --repofrompath=copr-ghostty,"$COPR_GHOSTTY_URL" --repoid=copr-ghostty \
     --repofrompath=copr-whelanh,"$COPR_WHELANH_URL" --repoid=copr-whelanh \
+    --repofrompath=copr-starship,"$COPR_STARSHIP_URL" --repoid=copr-starship \
     "$pkg" 2>/dev/null || MISSING+=("$pkg")
 done
 

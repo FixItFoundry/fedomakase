@@ -59,7 +59,14 @@ check "manifest: libxkbcommon-utils present (keybinds)" grep -q '^libxkbcommon-u
 check "copr repos file points at nett00n"    grep -q '^nett00n/hyprland$' "$OMARCHY/install/omarchy-fedora-copr.repos"
 check "copr repos file points at whelanh"    grep -q '^whelanh/omarchy$' "$OMARCHY/install/omarchy-fedora-copr.repos"
 check "copr repos file points at ghostty"    grep -q '^scottames/ghostty$' "$OMARCHY/install/omarchy-fedora-copr.repos"
+check "copr repos file points at starship"    grep -q '^atim/starship$' "$OMARCHY/install/omarchy-fedora-copr.repos"
+check "netinstall ks includes starship COPR repo" \
+  grep -q "atim/starship" "$OMARCHY/installer/omarchy-ks.cfg"
+check "apply.sh installs only resolvable packages" \
+  grep -q 'not resolvable, skipping' "$REPO_DIR/scripts/apply.sh"
 check "manifest: whelanh set present" bash -c "grep -q '^omacut$' '$MANIFEST' && grep -q '^omawrite$' '$MANIFEST' && grep -q '^tensaku$' '$MANIFEST' && grep -q '^hyprland-preview-share-picker$' '$MANIFEST' && grep -q '^aether$' '$MANIFEST'"
+check "manifest parses to discrete package names" \
+  bash -c "mapfile -t _p < <(sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*\$//' '$MANIFEST' | grep -v '^\$'); (( \${#_p[@]} > 100 )) && [[ \${_p[0]} == hyprland ]]"
 
 # --- Build scripts fail loud ---
 for b in "$REPO_DIR/build/build-netinstall-iso.sh" "$REPO_DIR/build/build-offline-iso.sh"; do
@@ -110,6 +117,10 @@ check "apply.sh syncs Fedora-owned helpers" \
   bash -c "grep -q 'omarchy-refresh-repos' '$REPO_DIR/scripts/apply.sh' && grep -q 'omarchy-voxtype-install' '$REPO_DIR/scripts/apply.sh'"
 check "apply.sh syncs COPR repos + manifest" \
   grep -q 'omarchy-fedora-copr.repos' "$REPO_DIR/scripts/apply.sh"
+check "apply.sh enables COPRs on running systems" \
+  grep -q 'dnf copr enable' "$REPO_DIR/scripts/apply.sh"
+check "apply.sh installs manifest packages" \
+  bash -c "grep -q 'manifest_pkgs' '$REPO_DIR/scripts/apply.sh'"
 check "patch runner creates hook sample dir" \
   bash -c "grep -q 'mkdir -p \"\$(dirname \"\$HOOK_SAMPLE\")\"' '$REPO_DIR/scripts/omarchy-apply-fedora-patches'"
 check "hook re-syncs stashed payload before runner" \

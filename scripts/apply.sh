@@ -65,8 +65,30 @@ chown -R "$TARGET_USER:$TARGET_USER" "$STASH" 2>/dev/null || true
 # Live system config (kickstart does this at install time; repeat for running systems)
 cp "$PAYLOAD/etc/sddm.conf.d/10-wayland.conf" /etc/sddm.conf.d/10-wayland.conf
 
+# --- COPR repos + manifest packages: ISO kickstarts do this at install time;
+#     repeat for running systems so first-party (whelanh) packages resolve ---
+echo "[4/7] Enabling COPRs and installing manifest packages..."
+while IFS= read -r repo; do
+  [[ -z $repo || $repo == \#* || $repo == *=* ]] && continue
+  dnf copr enable -y "$repo" 2>/dev/null || echo "  WARNING: could not enable COPR $repo"
+done < "$PAYLOAD/install/omarchy-fedora-copr.repos"
+mapfile -t manifest_pkgs < <(sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$PAYLOAD/install/omarchy-fedora-base.packages" | grep -v '^$' || true)
+(( ${#manifest_pkgs[@]} )) || { echo "Error: manifest parsed to zero packages." >&2; exit 1; }
+# Install only what resolves — one unresolvable name must not abort the rest.
+mapfile -t available < <(dnf repoquery --qf '%{name}\n' "${manifest_pkgs[@]}" 2>/dev/null | sort -u || true)
+RESOLVED=()
+for pkg in "${manifest_pkgs[@]}"; do
+  if printf '%s\n' "${available[@]}" | grep -qx "$pkg"; then
+    RESOLVED+=("$pkg")
+  else
+    echo "  WARNING: not resolvable, skipping: $pkg"
+  fi
+done
+(( ${#RESOLVED[@]} )) || { echo "Error: no manifest packages resolve — repo metadata unreachable?" >&2; exit 1; }
+dnf install -y "${RESOLVED[@]}"
+
 # --- TPM2 helper on PATH + dracut module config ---
-echo "[4/6] Installing TPM2 unlock support..."
+echo "[5/7] Installing TPM2 unlock support..."
 cp "$SCRIPT_DIR/omarchy-setup-tpm2-unlock" "$OMARCHY/bin/omarchy-setup-tpm2-unlock"
 chmod +x "$OMARCHY/bin/omarchy-setup-tpm2-unlock"
 mkdir -p /etc/dracut.conf.d
@@ -74,12 +96,12 @@ grep -q "tpm2-tss" /etc/dracut.conf.d/tpm2.conf 2>/dev/null \
   || echo 'add_dracutmodules+=" tpm2-tss "' >> /etc/dracut.conf.d/tpm2.conf
 
 # --- Dev package test (rpmbuild) helper ---
-echo "[5/6] Installing omarchy-dev-pkg-test..."
+echo "[6/7] Installing omarchy-dev-pkg-test..."
 cp "$SCRIPT_DIR/omarchy-dev-pkg-test" "$OMARCHY/bin/omarchy-dev-pkg-test"
 chmod +x "$OMARCHY/bin/omarchy-dev-pkg-test"
 
 # --- Run all idempotent patches once now ---
-echo "[6/6] Running omarchy-apply-fedora-patches..."
+echo "[7/7] Running omarchy-apply-fedora-patches..."
 "$OMARCHY/bin/omarchy-apply-fedora-patches"
 
 # --- Post-update hook so upstream refreshes re-apply everything ---
