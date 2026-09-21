@@ -36,8 +36,9 @@ done
 BUILD_DIR="/tmp/fedomakase_iso_build"
 OUTPUT_ISO="$REPO_DIR/fedomakase-44-x86_64.iso"
 ISO_LABEL="Fedora-E-dvd-x86_64-44"
-COPR_URL="https://copr-be.cloud.fedoraproject.org/results/lionheartp/Hyprland/fedora-44-x86_64/"
+COPR_URL="https://copr-be.cloud.fedoraproject.org/results/nett00n/hyprland/fedora-44-x86_64/"
 COPR_GHOSTTY_URL="https://copr-be.cloud.fedoraproject.org/results/scottames/ghostty/fedora-44-x86_64/"
+COPR_WHELANH_URL="https://copr-be.cloud.fedoraproject.org/results/whelanh/omarchy/fedora-44-x86_64/"
 
 echo -e "\e[32m=== Starting Fedomakase Netinstall ISO Build ===\e[0m"
 
@@ -89,8 +90,9 @@ MISSING=()
 for pkg in "${MANIFEST_PKGS[@]}"; do
   if dnf -q repoquery --arch=x86_64,noarch \
       --repoid=fedora --repoid=updates \
-      --repofrompath=copr-lionheartp,"$COPR_URL" --repoid=copr-lionheartp \
+      --repofrompath=copr-nett00n,"$COPR_URL" --repoid=copr-nett00n \
       --repofrompath=copr-ghostty,"$COPR_GHOSTTY_URL" --repoid=copr-ghostty \
+      --repofrompath=copr-whelanh,"$COPR_WHELANH_URL" --repoid=copr-whelanh \
       "$pkg" &>/dev/null; then
     RESOLVED+=("$pkg")
   else
@@ -109,7 +111,7 @@ for pkg in "${MISSING[@]:-}"; do
 done
 
 # Critical set must resolve or the ISO would install a broken desktop
-for pkg in hyprland hyprland-uwsm quickshell sddm uwsm xdg-desktop-portal-hyprland; do
+for pkg in hyprland quickshell sddm uwsm xdg-desktop-portal-hyprland hyprland-preview-share-picker omacut omawrite tensaku; do
   [[ " ${RESOLVED[*]} " == *" $pkg "* ]] || { echo "Error: critical package '$pkg' did not resolve — aborting." >&2; exit 1; }
 done
 

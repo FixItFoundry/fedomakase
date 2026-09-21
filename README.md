@@ -17,12 +17,13 @@ While upstream Omarchy targets Arch Linux, Fedomakase ports the entire desktop e
 - **Base System**: Built on top of the official **Fedora Everything Netinstall ISO** using a customized Anaconda Kickstart.
 - **Interactive TTY Installer**: Anaconda's `%pre` stage launches a [Gum](https://github.com/charmbracelet/gum) TUI on TTY3 for disk selection, **LUKS2 encryption**, and user setup. Choices are written to a `%include` file that drives real partitioning — there are no hardcoded credentials anywhere in the kickstart.
 - **Package Architecture**: `pacman`/`AUR` replaced with native `dnf`, `rpm`, and COPR. The ISO's `%packages` block is generated at build time from [`omarchy/install/omarchy-fedora-base.packages`](omarchy/install/omarchy-fedora-base.packages) — the single source of truth — with every package resolved against live repo metadata.
-- **Hyprland Stack**: [lionheartp/Hyprland](https://copr.fedorainfracloud.org/coprs/lionheartp/Hyprland/) COPR (the maintained fork of the abandoned solopasha repo). Covers hyprland, hyprland-uwsm, quickshell, and everything else the manifest needs.
+- **Hyprland Stack**: [nett00n/hyprland](https://copr.fedorainfracloud.org/coprs/nett00n/hyprland/) COPR (automated, Fedora 43/44/45, x86_64+aarch64). Covers hyprland, quickshell, uwsm, and everything else the manifest needs.
+- **Omarchy Binaries**: [whelanh/omarchy](https://copr.fedorainfracloud.org/coprs/whelanh/omarchy/) COPR (aether, cliamp, herdr, hyprland-preview-share-picker, omacalc, omacut, omawrite, tensaku, try, ttfx) + [scottames/ghostty](https://copr.fedorainfracloud.org/coprs/scottames/ghostty/) for ghostty.
 - **Self-Healing Updates**: A post-update hook re-applies all Fedora-specific adaptations whenever upstream Omarchy components are refreshed.
 - **TPM2 Auto-Unlock**: When LUKS is chosen and a TPM2 is present, the passphrase is enrolled against PCRs 0+7 automatically during install; dracut ships the `tpm2-tss` module.
 
-> 🚧 **Work in Progress: Custom COPR**
-> The few packages not yet RPM-packaged (e.g. `hyprland-preview-share-picker`) are planned for a dedicated Fedomakase COPR. Until then they are gracefully skipped by the build-time resolver.
+# COPR / Custom packages (nett00n/hyprland + whelanh/omarchy + scottames/ghostty) are
+# resolved at build time; all manifest names must resolve or the build warns.
 
 ---
 

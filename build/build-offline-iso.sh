@@ -1,7 +1,7 @@
 #!/bin/bash
 # Fedomakase Offline ISO Build Script
 # Builds a self-contained installer by mirroring all manifest packages
-# (fedora + updates + lionheartp/Hyprland COPR) into a local repo on the ISO.
+# (fedora + updates + nett00n/hyprland + whelanh/omarchy + ghostty COPRs) into a local repo on the ISO.
 #
 # NOTE: offline install path is PHASE 2 — the file:/// mount layout in
 # omarchy-ks-offline.cfg still needs verification on real hardware.
@@ -31,8 +31,9 @@ done
 BUILD_DIR="/tmp/fedomakase_offline_iso_build"
 OUTPUT_ISO="$REPO_DIR/fedomakase-offline-44-x86_64.iso"
 ISO_LABEL="Fedora-E-dvd-x86_64-44"
-COPR_URL="https://copr-be.cloud.fedoraproject.org/results/lionheartp/Hyprland/fedora-44-x86_64/"
+COPR_URL="https://copr-be.cloud.fedoraproject.org/results/nett00n/hyprland/fedora-44-x86_64/"
 COPR_GHOSTTY_URL="https://copr-be.cloud.fedoraproject.org/results/scottames/ghostty/fedora-44-x86_64/"
+COPR_WHELANH_URL="https://copr-be.cloud.fedoraproject.org/results/whelanh/omarchy/fedora-44-x86_64/"
 
 echo -e "\e[32m=== Starting Fedomakase Offline ISO Build ===\e[0m"
 
@@ -90,8 +91,9 @@ for pkg in "${MANIFEST_PKGS[@]}"; do
   # ponytail: per-pkg download keeps a single bad name from killing the mirror
   dnf download --resolve --alldeps --destdir="$REPO_DIR_TARGET" \
     --repoid=fedora --repoid=updates \
-    --repofrompath=copr-lionheartp,"$COPR_URL" --repoid=copr-lionheartp \
+    --repofrompath=copr-nett00n,"$COPR_URL" --repoid=copr-nett00n \
     --repofrompath=copr-ghostty,"$COPR_GHOSTTY_URL" --repoid=copr-ghostty \
+    --repofrompath=copr-whelanh,"$COPR_WHELANH_URL" --repoid=copr-whelanh \
     "$pkg" 2>/dev/null || MISSING+=("$pkg")
 done
 
@@ -102,7 +104,7 @@ for pkg in "${MISSING[@]:-}"; do
   echo "  WARNING: could not fully resolve: $pkg"
 done
 
-for pkg in hyprland hyprland-uwsm quickshell sddm uwsm; do
+for pkg in hyprland quickshell sddm uwsm hyprland-preview-share-picker omacut omawrite tensaku; do
   find "$REPO_DIR_TARGET" -name "${pkg}-*.rpm" | grep -q . \
     || { echo "Error: critical package '$pkg' missing from local repo — aborting." >&2; exit 1; }
 done

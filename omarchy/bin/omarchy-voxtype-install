@@ -8,7 +8,23 @@ set -e
 # Install voxtype and configure it for use.
 
 if gum confirm "Install Voxtype + AI model (~150MB) to enable dictation?"; then
-  omarchy-pkg-add wtype voxtype-bin
+  omarchy-pkg-add wtype
+
+  # voxtype has no Fedora RPM repo; install the official release RPM.
+  # ponytail: GitHub API lookup instead of a pinned version; repin if it flakes.
+  if omarchy-pkg-missing voxtype; then
+    rpm_url=$(curl -fsSL https://api.github.com/repos/peteonrails/voxtype/releases/latest |
+      jq -r '.assets[] | select(.name | test("x86_64\\.rpm$")) | .browser_download_url' | head -n 1)
+    [[ -n $rpm_url && $rpm_url != "null" ]] || { echo "Could not find voxtype RPM in latest release." >&2; exit 1; }
+    tmpdir=$(mktemp -d)
+    trap 'rm -rf "$tmpdir"' EXIT
+    curl -fsSL -o "$tmpdir/voxtype.rpm" "$rpm_url"
+    if (( EUID == 0 )); then
+      dnf install -y "$tmpdir/voxtype.rpm"
+    else
+      sudo dnf install -y "$tmpdir/voxtype.rpm"
+    fi
+  fi
 
   # Setup voxtype
   mkdir -p ~/.config/voxtype

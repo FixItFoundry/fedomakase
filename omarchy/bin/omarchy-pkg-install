@@ -15,7 +15,8 @@ fzf_args=(
   --color 'pointer:green,marker:green'
 )
 
-pkg_names=$(dnf repoquery --qf '%{name}' | sort -u | fzf "${fzf_args[@]}")
+# ponytail: official Fedora repos only; COPR browsing lives in pkg-aur-install.
+pkg_names=$(dnf repoquery --qf '%{name}' --repoid=fedora --repoid=updates | sort -u | fzf "${fzf_args[@]}")
 
 if [[ -n $pkg_names ]]; then
   source omarchy-sudo-keepalive

@@ -11,12 +11,50 @@ PATCH_DIR="${OMARCHY_FEDORA_PATCHES:-$OMARCHY/fedora-patches}"
 echo -e "\e[32mRe-applying Fedora patches...\e[0m"
 
 # --- Helper: apply sed fix only if pattern exists (idempotent) ---
+PATCHED=0
 apply_sed() {
   local file="$1" pattern="$2"
   if [[ -f "$file" ]] && grep -q "$3" "$file" 2>/dev/null; then
     sed -i "$pattern" "$file"
+    echo "  patched: $file"
+    (( ++PATCHED ))
   fi
 }
+
+# --- Check mode: verify every managed fix is present, patch nothing ---
+# Usage: omarchy-apply-fedora-patches --check
+# Exits 0 when all fixes present, 1 listing each file missing its fix.
+if [[ ${1:-} == "--check" ]]; then
+  MISSING=0
+  # Each line: <path relative to $OMARCHY>|<fixed-marker grep>|<description>
+  # Empty marker means "file must exist and be executable".
+  while IFS='|' read -r rel marker desc; do
+    [[ -z $rel ]] && continue
+    if [[ -z $marker ]]; then
+      if [[ -x $OMARCHY/$rel ]]; then echo "  ok      - $desc"; else echo "  MISSING - $desc ($rel)"; (( ++MISSING )); fi
+    elif grep -q "$marker" "$OMARCHY/$rel" 2>/dev/null; then
+      echo "  ok      - $desc"
+    else
+      echo "  MISSING - $desc ($rel)"; (( ++MISSING ))
+    fi
+  done << 'CHECKS'
+bin/omarchy-pkg-aur-accessible|nett00n/hyprland|COPR health-check URL
+bin/omarchy-voxtype-install|voxtype/releases/latest|voxtype upstream RPM install
+bin/omarchy-voxtype-remove|pkg-drop voxtype$|voxtype RPM package name
+bin/omarchy-channel-set|omarchy-refresh-repos|refresh-repos caller (channel-set)
+bin/omarchy-reinstall-pkgs|omarchy-refresh-repos|refresh-repos caller (reinstall-pkgs)
+bin/omarchy-refresh-repos||refresh-repos command present
+bin/omarchy-update-aur-pkgs|from_repo|COPR-scoped package updater
+bin/omarchy-pkg-install|repoid=fedora|Fedora-scoped package browser
+config/omarchy/hooks/pre-refresh-repos.d/add-custom-repo.sample|omarchy refresh repos|hook sample text
+default/omarchy/omarchy-menu.jsonc|"label":"COPR"|menu COPR label
+etc/sddm.conf.d/10-wayland.conf|uwsm start|SDDM launches via uwsm
+install/omarchy-fedora-copr.repos|^whelanh/omarchy$|whelanh COPR enabled
+install/omarchy-fedora-base.packages|^omacut$|whelanh manifest set
+CHECKS
+  echo "=== $MISSING missing fix(es) ==="
+  exit $(( MISSING > 0 ))
+fi
 
 # --- MENU ---
 echo "[1/10] Menu labels..."
@@ -136,11 +174,11 @@ apply_sed "$S" 's|omarchy pkg aur add <pkgs\.\.\.>.*for AUR-only packages|omarch
 
 # --- HOOK SAMPLE ---
 echo "[10/11] Hook samples..."
-HOOK_SAMPLE="$OMARCHY/config/omarchy/hooks/pre-refresh-pacman.d/add-custom-repo.sample"
+HOOK_SAMPLE="$OMARCHY/config/omarchy/hooks/pre-refresh-repos.d/add-custom-repo.sample"
 cat > "$HOOK_SAMPLE" << 'HOOK'
 #!/bin/bash
 
-# This hook is called by `omarchy refresh pacman` AFTER the channel template
+# This hook is called by `omarchy refresh repos` AFTER the channel template
 # is refreshed and BEFORE the package cache is updated. Use it to add custom
 # COPR repositories or extra exclude rules.
 #

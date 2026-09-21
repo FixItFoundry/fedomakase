@@ -19,7 +19,7 @@ write_stub() {
   chmod +x "$stub_bin/$name"
 }
 
-write_stub omarchy-refresh-pacman '#!/bin/bash
+write_stub omarchy-refresh-repos '#!/bin/bash
 printf "refresh" >>"$OMARCHY_CHANNEL_TEST_LOG"
 for arg in "$@"; do printf "\t%s" "$arg" >>"$OMARCHY_CHANNEL_TEST_LOG"; done
 printf "\n" >>"$OMARCHY_CHANNEL_TEST_LOG"

@@ -203,19 +203,24 @@ qt5-qtwayland
 fontawesome-fonts
 firewalld
 
-# COPR / Custom packages
+# COPR / Custom packages (nett00n/hyprland + whelanh/omarchy + scottames/ghostty)
 hyprland-guiutils
 hyprland-preview-share-picker
-#omacut
-#omawrite
-#omarchy-nvim
-#tensaku
-#tobi-try
+aether
+cliamp
+elsewhen
+herdr
+omacalc
+omacut
+omawrite
+tensaku
+try
+ttfx
+# Note: ttf-ia-writer / ttf-jetbrains-mono-nerd-basic have no Fedora RPM;
 #ttf-ia-writer
-#aether
-#cliamp
-#usage
-#tzupdate
 #ttf-jetbrains-mono-nerd-basic
+#omarchy-nvim
+#tzupdate
+#tobi-try
 perl-JSON-PP
 libxkbcommon-utils

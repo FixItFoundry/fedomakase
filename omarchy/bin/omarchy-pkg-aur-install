@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# omarchy:summary=Show a fuzzy-finder TUI for picking new COPR/Fedora packages to install.
+# omarchy:summary=Show a fuzzy-finder TUI for picking new COPR packages to install.
 # omarchy:requires-sudo=true
 
 fzf_args=(
@@ -15,7 +15,13 @@ fzf_args=(
   --color 'pointer:green,marker:green'
 )
 
-pkg_names=$(dnf repoquery --qf '%{name}' | sort -u | fzf "${fzf_args[@]}")
+# ponytail: query enabled COPR repos only; fall back to everything when none enabled.
+mapfile -t copr_ids < <(dnf repolist --enabled -q 2>/dev/null | awk '$1 ~ /^copr/ {print "--repoid=" $1}')
+if (( ${#copr_ids[@]} )); then
+  pkg_names=$(dnf repoquery --qf '%{name}' "${copr_ids[@]}" | sort -u | fzf "${fzf_args[@]}")
+else
+  pkg_names=$(dnf repoquery --qf '%{name}' | sort -u | fzf "${fzf_args[@]}")
+fi
 
 if [[ -n $pkg_names ]]; then
   source omarchy-sudo-keepalive

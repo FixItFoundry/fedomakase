@@ -2,12 +2,7 @@
 
 # omarchy:summary=Refresh DNF repository metadata and package caches.
 # omarchy:requires-sudo=true
+# omarchy:hidden=true
 
-echo "Refreshing DNF metadata..."
-if (( EUID == 0 )); then
-  dnf clean all
-  dnf makecache
-else
-  sudo dnf clean all
-  sudo dnf makecache
-fi
+# Deprecated shim — renamed to omarchy-refresh-repos.
+exec omarchy-refresh-repos "$@"

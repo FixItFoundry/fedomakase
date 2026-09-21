@@ -32,7 +32,8 @@ for ks in "$OMARCHY/installer/omarchy-ks.cfg" "$OMARCHY/installer/omarchy-ks-off
   check "$name: no hardcoded default password" bash -c "! grep -Eq -- '--password=.?omarchy' '$ks'"
   check "$name: references payload installer"  grep -q 'omarchy-fedora/installer/omarchy-installer.sh' "$ks"
 done
-check "kickstarts+builds use lionheartp COPR"  bash -c "! grep -rn 'nett00n' '$OMARCHY/installer/' '$REPO_DIR/build/'"
+check "kickstarts+builds use nett00n COPR"  bash -c "grep -rq 'nett00n' '$OMARCHY/installer/' '$REPO_DIR/build/'"
+check "no lionheartp/solopasha references remain" bash -c "! grep -rn 'lionheartp\|solopasha' '$OMARCHY/installer/' '$REPO_DIR/build/' '$OMARCHY/install/' '$OMARCHY/bin/omarchy-pkg-aur-accessible'"
 check "no jcasco machine paths anywhere"     bash -c "! grep -rn 'jcasco' '$REPO_DIR/build' '$REPO_DIR/scripts' '$OMARCHY/installer'"
 
 # --- Installer <-> kickstart contract ---
@@ -55,7 +56,10 @@ check "manifest: quickshell present"            grep -q '^quickshell$' "$MANIFES
 check "manifest: no waybar (QuickShell is the shell)" bash -c "! grep -q '^waybar$' '$MANIFEST'"
 check "manifest: perl-JSON-PP present (menu keybinds)"  grep -q '^perl-JSON-PP$' "$MANIFEST"
 check "manifest: libxkbcommon-utils present (keybinds)" grep -q '^libxkbcommon-utils$' "$MANIFEST"
-check "copr repos file points at lionheartp"    grep -q '^lionheartp/Hyprland$' "$OMARCHY/install/omarchy-fedora-copr.repos"
+check "copr repos file points at nett00n"    grep -q '^nett00n/hyprland$' "$OMARCHY/install/omarchy-fedora-copr.repos"
+check "copr repos file points at whelanh"    grep -q '^whelanh/omarchy$' "$OMARCHY/install/omarchy-fedora-copr.repos"
+check "copr repos file points at ghostty"    grep -q '^scottames/ghostty$' "$OMARCHY/install/omarchy-fedora-copr.repos"
+check "manifest: whelanh set present" bash -c "grep -q '^omacut$' '$MANIFEST' && grep -q '^omawrite$' '$MANIFEST' && grep -q '^tensaku$' '$MANIFEST' && grep -q '^hyprland-preview-share-picker$' '$MANIFEST' && grep -q '^aether$' '$MANIFEST'"
 
 # --- Build scripts fail loud ---
 for b in "$REPO_DIR/build/build-netinstall-iso.sh" "$REPO_DIR/build/build-offline-iso.sh"; do
@@ -87,17 +91,23 @@ else
   echo "  note- shellcheck not installed; skipping (dnf install ShellCheck)"
 fi
 
-echo "=== $FAILS failure(s) ==="
-exit $(( FAILS > 0 ))
+# --- ghostty must resolve through its COPR (not in official Fedora) ---
+check "netinstall ks includes ghostty COPR repo" \
+  grep -q "scottames/ghostty" "$OMARCHY/installer/omarchy-ks.cfg"
+check "netinstall ks includes nett00n COPR repo" \
+  grep -q "nett00n/hyprland" "$OMARCHY/installer/omarchy-ks.cfg"
+check "netinstall ks includes whelanh COPR repo" \
+  grep -q "whelanh/omarchy" "$OMARCHY/installer/omarchy-ks.cfg"
+check "build scripts query ghostty COPR during resolution" \
+  bash -c "! grep -L scottames '$REPO_DIR/build/build-netinstall-iso.sh' '$REPO_DIR/build/build-offline-iso.sh' | grep -q ."
+check "build scripts query whelanh COPR during resolution" \
+  bash -c "! grep -L whelanh '$REPO_DIR/build/build-netinstall-iso.sh' '$REPO_DIR/build/build-offline-iso.sh' | grep -q ."
 
-# --- (appended above) self-heal chain must survive upstream overwrites ---
+# --- self-heal chain must survive upstream overwrites ---
 check "hook restores runner from user-land stash" \
   grep -q '.local/share/fedomakase' "$REPO_DIR/scripts/apply-fedora-patches.hook"
 check "apply.sh populates the stash" \
   grep -q 'local/share/fedomakase' "$REPO_DIR/scripts/apply.sh"
 
-# --- ghostty must resolve through its COPR (not in official Fedora) ---
-check "netinstall ks includes ghostty COPR repo" \
-  grep -q "scottames/ghostty" "/installer/omarchy-ks.cfg"
-check "build scripts query ghostty COPR during resolution" \
-  bash -c "! grep -L scottames /build/build-netinstall-iso.sh /build/build-offline-iso.sh | grep -q ."
+echo "=== $FAILS failure(s) ==="
+exit $(( FAILS > 0 ))

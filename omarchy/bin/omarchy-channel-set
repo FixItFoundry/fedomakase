@@ -74,5 +74,5 @@ if [[ -n $dev_checkout ]]; then
   omarchy-state set reboot-required
 fi
 
-omarchy-refresh-pacman
+omarchy-refresh-repos
 omarchy-update -y

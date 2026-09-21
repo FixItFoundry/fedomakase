@@ -6,7 +6,7 @@
 set -e
 
 # Refresh DNF metadata
-omarchy-refresh-pacman
+omarchy-refresh-repos
 
 # Ensure all packages from the Fedora base list are installed
 mapfile -t packages < <(grep -v '^#' "$OMARCHY_PATH/install/omarchy-fedora-base.packages" | grep -v '^$')

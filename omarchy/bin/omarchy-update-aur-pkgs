@@ -1,6 +1,16 @@
 #!/bin/bash
 
-# omarchy:summary=Update AUR packages (No-op on Fedora)
+# omarchy:summary=Update COPR packages (Fedora equivalent of AUR updates)
+# omarchy:requires-sudo=true
 
-# Fedora uses DNF and Flatpak instead of AUR.
-exit 0
+# Upgrade packages that were installed from COPR repos. Everything else
+# is handled by omarchy-update-system-pkgs.
+pkgs=$(dnf repoquery --installed --qf '%{name} %{from_repo}' 2>/dev/null | awk '$2 ~ /^copr/ {print $1}')
+[[ -n $pkgs ]] || exit 0
+
+echo "Updating COPR packages..."
+if (( EUID == 0 )); then
+  dnf upgrade -y $pkgs
+else
+  sudo dnf upgrade -y $pkgs
+fi
