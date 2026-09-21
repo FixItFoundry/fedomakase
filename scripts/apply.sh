@@ -44,19 +44,24 @@ cp "$SCRIPT_DIR/omarchy-apply-fedora-patches" "$OMARCHY/bin/omarchy-apply-fedora
 chmod +x "$OMARCHY/bin/omarchy-apply-fedora-patches"
 
 # --- Fedora-owned helpers + data files: upstream updates overwrite these,
-#     so deploy the payload copies (the post-update hook re-patches the rest) ---
+#     so deploy the payload copies (the post-update hook re-syncs + re-patches) ---
 echo "[3/6] Syncing Fedora-owned helpers and data files..."
-for f in omarchy-pkg-add omarchy-pkg-aur-add omarchy-pkg-drop omarchy-pkg-missing \
-         omarchy-pkg-present omarchy-pkg-remove omarchy-pkg-install omarchy-pkg-aur-install \
-         omarchy-pkg-aur-accessible omarchy-channel-set omarchy-reinstall-pkgs \
-         omarchy-refresh-repos omarchy-refresh-pacman omarchy-update-aur-pkgs \
-         omarchy-update-system-pkgs omarchy-voxtype-install omarchy-voxtype-remove \
-         omarchy-voxtype-config omarchy-voxtype-model omarchy-voxtype-status; do
-  cp "$PAYLOAD/bin/$f" "$OMARCHY/bin/$f"
-  chmod +x "$OMARCHY/bin/$f"
+SYNC_BINS=(omarchy-pkg-add omarchy-pkg-aur-add omarchy-pkg-drop omarchy-pkg-missing
+  omarchy-pkg-present omarchy-pkg-remove omarchy-pkg-install omarchy-pkg-aur-install
+  omarchy-pkg-aur-accessible omarchy-channel-set omarchy-reinstall-pkgs
+  omarchy-refresh-repos omarchy-refresh-pacman omarchy-update-aur-pkgs
+  omarchy-update-system-pkgs omarchy-voxtype-install omarchy-voxtype-remove
+  omarchy-voxtype-config omarchy-voxtype-model omarchy-voxtype-status)
+for dest in "$OMARCHY" "$STASH/payload"; do
+  mkdir -p "$dest/bin" "$dest/install" "$dest/etc/sddm.conf.d"
+  for f in "${SYNC_BINS[@]}"; do
+    cp "$PAYLOAD/bin/$f" "$dest/bin/$f"
+    chmod +x "$dest/bin/$f"
+  done
+  cp "$PAYLOAD/install/omarchy-fedora-base.packages" "$PAYLOAD/install/omarchy-fedora-copr.repos" "$dest/install/"
+  cp "$PAYLOAD/etc/sddm.conf.d/10-wayland.conf" "$dest/etc/sddm.conf.d/10-wayland.conf"
 done
-cp "$PAYLOAD/install/omarchy-fedora-base.packages" "$PAYLOAD/install/omarchy-fedora-copr.repos" "$OMARCHY/install/"
-cp "$PAYLOAD/etc/sddm.conf.d/10-wayland.conf" "$OMARCHY/etc/sddm.conf.d/10-wayland.conf"
+chown -R "$TARGET_USER:$TARGET_USER" "$STASH" 2>/dev/null || true
 # Live system config (kickstart does this at install time; repeat for running systems)
 cp "$PAYLOAD/etc/sddm.conf.d/10-wayland.conf" /etc/sddm.conf.d/10-wayland.conf
 

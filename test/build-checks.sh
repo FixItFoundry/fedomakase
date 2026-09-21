@@ -112,6 +112,10 @@ check "apply.sh syncs COPR repos + manifest" \
   grep -q 'omarchy-fedora-copr.repos' "$REPO_DIR/scripts/apply.sh"
 check "patch runner creates hook sample dir" \
   bash -c "grep -q 'mkdir -p \"\$(dirname \"\$HOOK_SAMPLE\")\"' '$REPO_DIR/scripts/omarchy-apply-fedora-patches'"
+check "hook re-syncs stashed payload before runner" \
+  bash -c "grep -q 'STASH/payload/bin' '$REPO_DIR/scripts/apply-fedora-patches.hook'"
+check "apply.sh stashes payload for the hook" \
+  bash -c "grep -q 'STASH/payload' '$REPO_DIR/scripts/apply.sh'"
 
 # --- self-heal chain must survive upstream overwrites ---
 check "hook restores runner from user-land stash" \

@@ -25,6 +25,23 @@ if [[ ! -x $RUNNER ]]; then
   chmod +x "$OMARCHY/bin/"*
 fi
 
+# Re-sync payload-owned files first: upstream updates replace these wholesale
+# and the sed runner cannot reconstruct them. The stash is the durable source.
+if [[ -d $STASH/payload/bin ]]; then
+  echo "fedomakase: re-syncing payload helpers from stash..."
+  if (( EUID == 0 )); then
+    cp "$STASH/payload/bin/"* "$OMARCHY/bin/"
+    cp "$STASH/payload/install/"* "$OMARCHY/install/"
+    cp "$STASH/payload/etc/sddm.conf.d/10-wayland.conf" "$OMARCHY/etc/sddm.conf.d/10-wayland.conf"
+    chmod +x "$OMARCHY/bin/"*
+  else
+    sudo cp "$STASH/payload/bin/"* "$OMARCHY/bin/"
+    sudo cp "$STASH/payload/install/"* "$OMARCHY/install/"
+    sudo cp "$STASH/payload/etc/sddm.conf.d/10-wayland.conf" "$OMARCHY/etc/sddm.conf.d/10-wayland.conf"
+    sudo chmod +x "$OMARCHY/bin/"*
+  fi
+fi
+
 if (( EUID == 0 )); then
   "$RUNNER"
 else
