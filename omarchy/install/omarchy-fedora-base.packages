@@ -11,6 +11,7 @@ slurp
 grim
 wl-clipboard
 brightnessctl
+ddcutil
 pamixer
 wireplumber
 pipewire
@@ -26,8 +27,11 @@ xdg-user-dirs
 xdg-user-dirs-gtk
 xdg-utils
 sddm
+qt6-qtbase
 qt6-qtwayland
 qt6-qtdeclarative
+qt6-qtmultimedia
+qt6-qtimageformats
 qt6-qt5compat
 qt6-qtsvg
 hyprpicker
@@ -46,6 +50,7 @@ ghostty
 kitty
 foot
 neovim
+vim-minimal
 btop
 fastfetch
 fzf
@@ -69,38 +74,42 @@ imv
 mpv
 mpv-mpris
 gnome-disk-utility
-gnome-calculator
 flatpak
-kdenlive
-obs-studio
 pinta
-xournalpp
 sushi
 libreoffice-writer
 nautilus-python
 gvfs-mtp
 gvfs-nfs
 gvfs-smb
+ffmpeg
 ffmpegthumbnailer
+vips-tools
 ImageMagick
 gnome-keyring
 libsecret
 udiskie
 inotify-tools
 inxi
-dua-cli
+qrencode
+zbar
+wf-recorder
 
 # Printing & Scanning
 cups
-cups-browsed
 cups-filters
-cups-pdf
+cups-pk-helper
 system-config-printer
 
-# Input Methods
+# Input Methods (including CJK engines for installer layout selection)
 fcitx5
 fcitx5-gtk
 fcitx5-qt
+fcitx5-chewing
+fcitx5-chinese-addons
+fcitx5-hangul
+fcitx5-mozc
+fcitx5-table-extra
 
 # Audio
 alsa-utils
@@ -118,7 +127,6 @@ avahi
 nss-mdns
 bluez
 bluez-tools
-# bluez-firmware (part of linux-firmware)
 bolt
 socat
 whois
@@ -129,7 +137,6 @@ iwd
 # Firmware, Wi-Fi & Hardware Drivers
 linux-firmware
 kernel-modules-extra
-# iwl7260-firmware (part of iwlwifi-*-firmware)
 iwlwifi-dvm-firmware
 iwlwifi-mvm-firmware
 realtek-firmware
@@ -141,7 +148,6 @@ util-linux-script
 unzip
 tar
 xz
-# p7zip (not available in Fedora repos; use unzip, tar, xz instead)
 ca-certificates
 less
 man-db
@@ -157,8 +163,6 @@ yt-dlp
 gcc
 gcc-c++
 make
-clang
-llvm
 ruby
 lua
 luarocks
@@ -169,15 +173,11 @@ python3-poetry-core
 moby-engine
 docker-compose
 docker-buildx
-rust
 
 # Database Client Libraries
 mariadb-connector-c
 libpq
 libyaml
-
-# Qt Theme Engine
-kvantum-qt5
 
 # Wayland Infrastructure
 uwsm
@@ -193,34 +193,38 @@ google-noto-sans-fonts
 google-noto-sans-cjk-fonts
 jetbrains-mono-fonts-all
 yaru-icon-theme
+fontawesome-fonts
 
 # Added missing dependencies from Arch Omarchy
-# gnome-themes-extra (not in Fedora 44 repos; Adwaita+Yaru cover themes)
 lazygit
 compat-lua
 dotnet-runtime-8.0
-qt5-qtwayland
-fontawesome-fonts
 firewalld
-
-# COPR / Custom packages (nett00n/hyprland + whelanh/omarchy + scottames/ghostty)
-hyprland-guiutils
-hyprland-preview-share-picker
-aether
-cliamp
-elsewhen
-herdr
-omacalc
-omacut
-omawrite
-tensaku
-try
-ttfx
-# Note: ttf-ia-writer / ttf-jetbrains-mono-nerd-basic have no Fedora RPM;
-#ttf-ia-writer
-#ttf-jetbrains-mono-nerd-basic
-#omarchy-nvim
-#tzupdate
-#tobi-try
 perl-JSON-PP
 libxkbcommon-utils
+
+# COPR / Custom packages (nett00n/hyprland + whelanh/omarchy + targeted COPRs)
+hyprland-guiutils
+hyprland-preview-share-picker
+omarchy-hyprland-titlebars
+aether
+cliamp
+disktree-bin
+elsewhen
+gliff
+herdr
+hype
+monologue
+omacalc
+omacut
+omasnap
+omawrite
+owe
+owe-lockfeed
+signed
+try
+ttfx
+mise
+localsend
+gpu-screen-recorder
+moonlight-qt

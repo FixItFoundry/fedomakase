@@ -13,5 +13,4 @@ if ! omarchy-pkg-present quickshell-git; then
   # quickshell package in place; packages depending on quickshell stay
   # satisfied through the provides.
   sudo pacman -S --noconfirm --ask 4 quickshell-git
-  omarchy-state set restart-shell-required
 fi

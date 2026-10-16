@@ -3,8 +3,35 @@
 # omarchy:summary=Returns true if all of the named packages are installed on the system (or false if any of them are missing).
 # omarchy:args=<packages...>
 
+pkg_installed() {
+  local pkg=$1
+  rpm -q -- "$pkg" &>/dev/null && return 0
+  case "$pkg" in
+    brave-bin) rpm -q brave-browser &>/dev/null && return 0 ;;
+    brave-origin-bin) rpm -q brave-origin-browser &>/dev/null && return 0 ;;
+    microsoft-edge-stable-bin) rpm -q microsoft-edge-stable &>/dev/null && return 0 ;;
+    zen-browser-bin) rpm -q zen-browser &>/dev/null && return 0 ;;
+    google-chrome)
+      rpm -q google-chrome-stable &>/dev/null && return 0
+      flatpak info com.google.Chrome &>/dev/null && return 0
+      ;;
+    visual-studio-code-bin) rpm -q code &>/dev/null && return 0 ;;
+    sublime-text-4) rpm -q sublime-text &>/dev/null && return 0 ;;
+    libreoffice-fresh) rpm -q libreoffice-writer &>/dev/null && return 0 ;;
+    github-cli) rpm -q gh &>/dev/null && return 0 ;;
+    mise-bin) rpm -q mise &>/dev/null && return 0 ;;
+    nordvpn-bin) rpm -q nordvpn &>/dev/null && return 0 ;;
+    libfprint-git) rpm -q libfprint &>/dev/null && return 0 ;;
+    voxtype-bin) rpm -q voxtype &>/dev/null && return 0 ;;
+    voxtype) rpm -q voxtype-bin &>/dev/null && return 0 ;;
+    obsidian) flatpak info md.obsidian.Obsidian &>/dev/null && return 0 ;;
+    *.*.*) flatpak info -- "$pkg" &>/dev/null && return 0 ;;
+  esac
+  return 1
+}
+
 for pkg in "$@"; do
-  (rpm -q "$pkg" &>/dev/null || flatpak info "$pkg" &>/dev/null) || exit 1
+  pkg_installed "$pkg" || exit 1
 done
 
 exit 0

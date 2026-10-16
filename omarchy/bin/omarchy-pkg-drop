@@ -8,21 +8,56 @@ installed=()
 declare -A installed_exact=()
 declare -A selected=()
 
+if ! installed_packages=$(rpm -qa --qf '%{NAME}\n'); then
+  echo "Unable to query installed packages; no packages were removed." >&2
+  exit 1
+fi
+
 while IFS= read -r package_name; do
-  installed_exact[$package_name]=1
-done < <(rpm -qa --qf '%{NAME}\n')
+  if [[ -n $package_name ]]; then
+    installed_exact[$package_name]=1
+  fi
+done <<< "$installed_packages"
+
+candidates_for() {
+  echo "$1"
+  case "$1" in
+    brave-bin) echo brave-browser ;;
+    brave-origin-bin) echo brave-origin-browser ;;
+    microsoft-edge-stable-bin) echo microsoft-edge-stable ;;
+    zen-browser-bin) echo zen-browser ;;
+    google-chrome) echo google-chrome-stable ;;
+    visual-studio-code-bin) echo code ;;
+    sublime-text-4) echo sublime-text ;;
+    libreoffice-fresh)
+      echo libreoffice-writer
+      echo libreoffice-core
+      ;;
+    github-cli) echo gh ;;
+    mise-bin) echo mise ;;
+    nordvpn-bin) echo nordvpn ;;
+    libfprint-git) echo libfprint ;;
+    voxtype) echo voxtype-bin ;;
+    voxtype-bin) echo voxtype ;;
+  esac
+}
 
 for pkg in "$@"; do
-  if [[ -n ${installed_exact[$pkg]} && -z ${selected[$pkg]} ]]; then
-    installed+=("$pkg")
-    selected[$pkg]=1
+  if [[ $pkg == "obsidian" ]] && flatpak info md.obsidian.Obsidian &>/dev/null; then
+    flatpak uninstall -y md.obsidian.Obsidian || true
   fi
+  while IFS= read -r candidate; do
+    if [[ -n ${installed_exact[$candidate]:-} && -z ${selected[$candidate]:-} ]]; then
+      installed+=("$candidate")
+      selected[$candidate]=1
+    fi
+  done < <(candidates_for "$pkg")
 done
 
 if (( ${#installed[@]} > 0 )); then
   if (( EUID == 0 )); then
-    dnf remove -y "${installed[@]}"
+    dnf remove -y -- "${installed[@]}"
   else
-    sudo dnf remove -y "${installed[@]}"
+    sudo dnf remove -y -- "${installed[@]}"
   fi
 fi

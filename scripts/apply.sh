@@ -20,7 +20,7 @@ echo "=== Fedomakase: applying Fedora port ==="
 [[ -d $OMARCHY ]] || { echo "Error: $OMARCHY not found — is Omarchy installed?" >&2; exit 1; }
 
 # --- Runtime patch directory (consumed by omarchy-apply-fedora-patches) ---
-echo "[1/6] Installing fedora-patches runtime directory..."
+echo "[1/7] Installing fedora-patches runtime directory..."
 mkdir -p "$OMARCHY/fedora-patches"
 cp "$SCRIPT_DIR/omarchy-setup-tpm2-unlock" "$OMARCHY/fedora-patches/"
 cp "$SCRIPT_DIR/omarchy-dev-pkg-test" "$OMARCHY/fedora-patches/"
@@ -39,19 +39,22 @@ cp "$SCRIPT_DIR/apply-fedora-patches.hook" "$STASH/fedora-patches/"
 chown -R "$TARGET_USER:$TARGET_USER" "$STASH" 2>/dev/null || true
 
 # --- Patch runner ---
-echo "[2/6] Installing omarchy-apply-fedora-patches..."
+echo "[2/7] Installing omarchy-apply-fedora-patches..."
 cp "$SCRIPT_DIR/omarchy-apply-fedora-patches" "$OMARCHY/bin/omarchy-apply-fedora-patches"
 chmod +x "$OMARCHY/bin/omarchy-apply-fedora-patches"
 
 # --- Fedora-owned helpers + data files: upstream updates overwrite these,
 #     so deploy the payload copies (the post-update hook re-syncs + re-patches) ---
-echo "[3/6] Syncing Fedora-owned helpers and data files..."
+echo "[3/7] Syncing Fedora-owned helpers and data files..."
 SYNC_BINS=(omarchy-pkg-add omarchy-pkg-aur-add omarchy-pkg-drop omarchy-pkg-missing
   omarchy-pkg-present omarchy-pkg-remove omarchy-pkg-install omarchy-pkg-aur-install
   omarchy-pkg-aur-accessible omarchy-channel-set omarchy-reinstall-pkgs
   omarchy-refresh-repos omarchy-refresh-pacman omarchy-update-aur-pkgs
-  omarchy-update-system-pkgs omarchy-voxtype-install omarchy-voxtype-remove
-  omarchy-voxtype-config omarchy-voxtype-model omarchy-voxtype-status)
+  omarchy-update-system-pkgs omarchy-update-pkg-prune omarchy-update-orphan-pkgs
+  omarchy-update-restart omarchy-update-analyze-logs omarchy-system
+  omarchy-install-dictation-voxtype omarchy-remove-dictation-voxtype
+  omarchy-install-dictation-superwhisper omarchy-remove-dictation-superwhisper
+  omarchy-voxtype-config omarchy-voxtype-model omarchy-first-run uwsm-app)
 for dest in "$OMARCHY" "$STASH/payload"; do
   mkdir -p "$dest/bin" "$dest/install" "$dest/etc/sddm.conf.d"
   for f in "${SYNC_BINS[@]}"; do
@@ -61,6 +64,7 @@ for dest in "$OMARCHY" "$STASH/payload"; do
   cp "$PAYLOAD/install/omarchy-fedora-base.packages" "$PAYLOAD/install/omarchy-fedora-copr.repos" "$dest/install/"
   cp "$PAYLOAD/etc/sddm.conf.d/10-wayland.conf" "$dest/etc/sddm.conf.d/10-wayland.conf"
 done
+ln -sf "$OMARCHY/bin/uwsm-app" /usr/local/bin/uwsm-app
 chown -R "$TARGET_USER:$TARGET_USER" "$STASH" 2>/dev/null || true
 # Live system config (kickstart does this at install time; repeat for running systems)
 cp "$PAYLOAD/etc/sddm.conf.d/10-wayland.conf" /etc/sddm.conf.d/10-wayland.conf

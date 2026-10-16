@@ -4,6 +4,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Ui
 import qs.Commons
+import qs.Commons as Commons
 import "Model.js" as Model
 
 Panel {
@@ -26,6 +27,9 @@ Panel {
   property string monitorScale: ""
   property var displays: []
   property int enabledDisplayCount: 0
+
+  // Carry sub-notch touchpad deltas between wheel events.
+  property real wheelAccumulator: 0
 
   // Cursor model shared by keyboard and mouse. Sections:
   //   "brightness" - single slider row, selectedIndex = -1 sentinel
@@ -184,6 +188,7 @@ Panel {
   // taller than its allotted height (lots of displays). Mirrors audio's
   // ensureCursorVisible helper.
   function ensureCursorVisible(item) {
+    var scrollArea = panel.loadedContent ? panel.loadedContent.scrollArea : null
     if (!item || !scrollArea) return
     var flick = scrollArea.contentItem
     if (!flick || flick.contentY === undefined) return
@@ -214,7 +219,7 @@ Panel {
     })
   }
 
-  IpcHandler {
+  ShellIpc {
     target: "omarchy.monitor"
 
     function brightness(percent: string): string { return root.brightnessIpc(percent) }
@@ -241,13 +246,21 @@ Panel {
     }
 
     root.brightnessSetQueued = false
-    setBrightnessProc.command = ["bash", "-c", "omarchy-brightness-display --no-osd " + percent + "%"]
+    setBrightnessProc.command = ["omarchy-brightness-display", "--no-osd", "--monitor", root.focusedMonitor, percent + "%"]
     setBrightnessProc.running = true
   }
 
   function previewBrightness(value) {
     root.brightnessPercent = Model.clampBrightness(value)
     brightnessDebounce.restart()
+  }
+
+  function showBrightnessOsd(percent) {
+    if (!bar || !bar.shell) return
+    bar.shell.summon("omarchy.osd", JSON.stringify({
+      icon: "brightness",
+      value: percent
+    }))
   }
 
   function normalizeScale(scale) {
@@ -276,7 +289,7 @@ Panel {
   // span ~10–20 points so casual tweaks change the label, while small
   // nudges within one band don't.
   function brightnessName(percent) {
-    return Model.brightnessName(percent)
+    return Model.brightnessName(percent, Commons.I18n.t)
   }
 
   function updateDisplays(displaysJson) {
@@ -289,7 +302,13 @@ Panel {
     if (!name) return
     if (enabled && root.enabledDisplayCount <= 1) return
 
-    actionProc.command = ["hyprctl", "keyword", "monitor", name + (enabled ? ",disable" : ",preferred,auto,auto")]
+    // hyprctl keyword is rejected under the Lua config ("non-legacy parsers"),
+    // so drive the monitor through the hl.monitor eval API instead.
+    var output = '"' + name.replace(/[\\"]/g, "\\$&") + '"'
+    var expr = enabled
+      ? 'hl.monitor({ output = ' + output + ', disabled = true })'
+      : 'hl.monitor({ output = ' + output + ', disabled = false, mode = "preferred", position = "auto", scale = "auto" })'
+    actionProc.command = ["hyprctl", "eval", expr]
     if (!actionProc.running) actionProc.running = true
   }
 
@@ -340,9 +359,9 @@ Panel {
 
   Component.onCompleted: refresh()
 
-  // KeyboardPanel takes Exclusive focus at map-time, so SUPER-bound IPC
-  // summons land with j/k ready to navigate. Keep a default landing point,
-  // but don't paint the cursor until hover or the first navigation key.
+  // KeyboardPanel primes focus at open-time, so SUPER-bound IPC summons land
+  // with j/k ready to navigate. Keep a default landing point, but don't paint
+  // the cursor until hover or the first navigation key.
   onOpenedChanged: {
     if (opened) {
       refresh()
@@ -461,7 +480,12 @@ Panel {
     text: Quickshell.screens.length > 1 ? "󰍺" : "󰍹"
     onPressed: function(b) { root.toggle() }
     onWheelMoved: function(delta) {
-      if (root.brightnessAvailable) root.setBrightness(root.brightnessPercent + (delta > 0 ? 5 : -5))
+      if (!root.brightnessAvailable) return
+      var wheel = Util.wheelSteps(root.wheelAccumulator, delta)
+      root.wheelAccumulator = wheel.remainder
+      if (wheel.steps === 0) return
+      root.setBrightness(root.brightnessPercent + wheel.steps * 5)
+      root.showBrightnessOsd(root.brightnessPercent)
     }
   }
 
@@ -471,12 +495,14 @@ Panel {
     owner: root
     bar: root.bar
     open: root.opened
-    focusTarget: keyCatcher
+    focusTarget: panel.loadedContent
     contentWidth: panel.fittedContentWidth(Style.space(380))
-    contentHeight: panel.fittedContentHeight(panelColumn.implicitHeight, Style.space(560))
+    contentHeight: panel.fittedContentHeight(panel.loadedContentHeight, Style.space(560))
 
-    PanelKeyCatcher {
+    content: PanelKeyCatcher {
       id: keyCatcher
+      property alias scrollArea: scrollArea
+      implicitHeight: panelColumn.implicitHeight
       anchors.fill: parent
       onMoveRequested: function(dx, dy) {
         if (!root.cursorActive) { root.cursorActive = true; return }
@@ -515,6 +541,7 @@ Panel {
 
             Text {
               id: heroIcon
+              textFormat: Text.PlainText
               text: root.displays.length > 1 ? "󰍺" : "󰍹"
               color: root.bar.foreground
               font.family: root.bar.fontFamily
@@ -532,7 +559,8 @@ Panel {
               spacing: Style.space(2)
 
               Text {
-                text: "Display"
+                text: Commons.I18n.t("monitor.display")
+                textFormat: Text.PlainText
                 color: root.bar.foreground
                 font.family: root.bar.fontFamily
                 font.pixelSize: Style.font.title
@@ -543,11 +571,12 @@ Panel {
 
               Text {
                 id: heroLabel
+                textFormat: Text.PlainText
                 text: {
                   if (root.brightnessAvailable) {
                     return root.brightnessName(brightnessSlider.dragging ? brightnessSlider.liveValue : root.brightnessPercent).toUpperCase()
                   }
-                  return "FIXED BRIGHTNESS"
+                  return Commons.I18n.t("monitor.fixedBrightness")
                 }
                 color: Qt.darker(root.bar.foreground, 1.4)
                 font.family: root.bar.fontFamily
@@ -577,7 +606,7 @@ Panel {
 
               PanelSectionHeader {
                 id: brightnessHeader
-                text: "BRIGHTNESS"
+                text: Commons.I18n.t("monitor.brightness")
                 foreground: root.bar.foreground
                 fontFamily: root.bar.fontFamily
                 anchors.left: parent.left
@@ -586,7 +615,8 @@ Panel {
 
               Text {
                 id: brightnessPercent
-                text: Math.round(brightnessSlider.dragging ? brightnessSlider.liveValue : root.brightnessPercent) + "%"
+                textFormat: Text.PlainText
+                text: Commons.I18n.formatNumber(Math.round(brightnessSlider.dragging ? brightnessSlider.liveValue : root.brightnessPercent)) + "%"
                 color: Qt.darker(root.bar.foreground, 1.4)
                 font.family: root.bar.fontFamily
                 font.pixelSize: Style.font.caption
@@ -649,7 +679,7 @@ Panel {
 
               PanelSectionHeader {
                 id: textSizeHeader
-                text: "TEXT SIZE"
+                text: Commons.I18n.t("monitor.textSize")
                 foreground: root.bar.foreground
                 fontFamily: root.bar.fontFamily
                 anchors.left: parent.left
@@ -658,7 +688,8 @@ Panel {
 
               Text {
                 id: textSizePx
-                text: (textSizeSlider.dragging
+                textFormat: Text.PlainText
+                text: Commons.I18n.formatNumber(textSizeSlider.dragging
                        ? root.textSizeStops[Math.round(textSizeSlider.liveValue)]
                        : root.displayedTextPx()) + "px"
                 color: Qt.darker(root.bar.foreground, 1.4)
@@ -720,7 +751,7 @@ Panel {
 
               PanelSectionHeader {
                 id: scaleHeader
-                text: "SCALE"
+                text: Commons.I18n.t("monitor.scale")
                 foreground: root.bar.foreground
                 fontFamily: root.bar.fontFamily
                 anchors.left: parent.left
@@ -731,6 +762,7 @@ Panel {
               // focused one.
               Text {
                 id: scaleMonitor
+                textFormat: Text.PlainText
                 text: root.focusedMonitor
                 // Only worth naming when more than one display is in play.
                 visible: root.focusedMonitor !== "" && root.enabledDisplayCount > 1
@@ -781,7 +813,7 @@ Panel {
             visible: root.displays.length > 1
 
             PanelSectionHeader {
-              text: "DISPLAYS"
+              text: Commons.I18n.t("monitor.displays")
               foreground: root.bar.foreground
               fontFamily: root.bar.fontFamily
             }
@@ -814,7 +846,7 @@ Panel {
     required property string scaleValue
     required property int scaleIndex
 
-    text: root.effectiveScale(scaleValue) + "x"
+    text: Commons.I18n.formatNumber(root.effectiveScale(scaleValue)) + "x"
     fontSize: Style.font.caption
     foreground: root.bar.foreground
     fontFamily: root.bar.fontFamily
@@ -846,8 +878,8 @@ Panel {
     onHasCursorChanged: if (hasCursor) root.ensureCursorVisible(monitorRow)
     current: isFocused
     foreground: root.bar.foreground
-    fill: Style.hoverFillFor(root.bar.foreground, Color.accent)
-    currentFill: Style.selectedFillFor(root.bar.foreground, Color.accent)
+    fill: Style.hoverFillFor(root.bar.foreground, Commons.Color.accent)
+    currentFill: Style.selectedFillFor(root.bar.foreground, Commons.Color.accent)
     implicitHeight: monitorInner.implicitHeight + Style.spacing.xl
     opacity: canToggle ? 1.0 : 0.45
 
@@ -871,7 +903,10 @@ Panel {
       }
 
       Text {
-        text: monitorRow.display.name + (monitorRow.display.focused ? " · focused" : "")
+        textFormat: Text.PlainText
+        text: monitorRow.display.focused
+          ? Commons.I18n.t("monitor.displayFocused").arg(monitorRow.display.name)
+          : monitorRow.display.name
         color: root.bar.foreground
         font.family: root.bar.fontFamily
         font.pixelSize: Style.font.body
@@ -881,6 +916,7 @@ Panel {
       }
 
       Text {
+        textFormat: Text.PlainText
         text: monitorRow.display.enabled ? "󰄬" : ""
         color: root.bar.foreground
         font.family: root.bar.fontFamily

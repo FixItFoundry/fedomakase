@@ -1,15 +1,3 @@
-function parseWeatherStatus(raw) {
-  try {
-    var data = JSON.parse(String(raw || "{}"))
-    return {
-      label: data.text || "",
-      klass: data.class || ""
-    }
-  } catch (e) {
-    return { label: "", klass: "" }
-  }
-}
-
 // weather.json holds {"name": ..., "latitude": ..., "longitude": ...} (see
 // omarchy-weather-location, which owns the format). Missing, blank, or
 // unparseable means the location is auto-detected from the IP address.
@@ -98,9 +86,15 @@ function celsiusToFahrenheit(value) {
   return isNaN(n) ? "" : (n * 9 / 5) + 32
 }
 
-function formatTemp(value, useImperial) {
+// fmt writes the number for display (QML passes I18n.formatNumber, so a
+// Persian reading gets Persian digits); left out, it is written as it is.
+function displayNumber(fmt) {
+  return typeof fmt === "function" ? fmt : function(v, d) { return d === undefined ? String(v) : Number(v).toFixed(d) }
+}
+
+function formatTemp(value, useImperial, fmt) {
   if (value === undefined || value === null || value === "") return ""
-  return value + "°" + (useImperial ? "F" : "C")
+  return displayNumber(fmt)(value) + "°" + (useImperial ? "F" : "C")
 }
 
 function normalizedUnit(value) {
@@ -218,13 +212,13 @@ function buildForecastDays(report, dailyForecastReport, todayString) {
   return days.length > 0 ? days : wttrNextForecastDays(report, todayString)
 }
 
-function bareTempForDay(day, kind, useImperial) {
+function bareTempForDay(day, kind, useImperial, fmt) {
   if (!day) return ""
   var v = useImperial
     ? (kind === "max" ? day.maxtempF : day.mintempF)
     : (kind === "max" ? day.maxtempC : day.mintempC)
   if (v === undefined || v === null || v === "") return ""
-  return v + "°"
+  return displayNumber(fmt)(v) + "°"
 }
 
 function dayIcon(day) {
@@ -279,7 +273,6 @@ function iconForCode(code, night) {
 
 if (typeof module !== "undefined") {
   module.exports = {
-    parseWeatherStatus: parseWeatherStatus,
     parseLocationFile: parseLocationFile,
     wttrLocationQuery: wttrLocationQuery,
     parseGeocodingResults: parseGeocodingResults,

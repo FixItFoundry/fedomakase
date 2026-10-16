@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 
 Panel {
@@ -11,6 +12,15 @@ Panel {
   moduleName: "omarchy.tailscale"
   ipcTarget: "omarchy.tailscale"
   manageIpc: false
+
+  // Items inside the panel's lazily built content, null until it first
+  // opens. Code inside the content reaches its own ids directly.
+  readonly property Item panelFlick: panel.loadedContent ? panel.loadedContent.panelFlick : null
+  readonly property Item hero: panel.loadedContent ? panel.loadedContent.hero : null
+  readonly property Item exitNodeColumn: panel.loadedContent ? panel.loadedContent.exitNodeColumn : null
+  readonly property Item mullvadSearch: panel.loadedContent ? panel.loadedContent.mullvadSearch : null
+  readonly property Item mullvadRegionColumn: panel.loadedContent ? panel.loadedContent.mullvadRegionColumn : null
+  readonly property Item peerColumn: panel.loadedContent ? panel.loadedContent.peerColumn : null
 
   property string focusSection: "header"
   property int headerIndex: 0
@@ -24,21 +34,21 @@ Panel {
   property string mullvadQuery: ""
   property int phraseIndex: 0
   readonly property var activePhrases: [
-    "Encrypting connections",
-    "Sending secrets",
-    "Guarding wires",
-    "Braiding packets",
-    "Polishing tunnels",
-    "Hiding routes",
-    "Sealing ports",
-    "Sorting tailnets",
-    "Shuffling keys",
-    "Watching machines"
+    Commons.I18n.t("tailscale.phrase1"),
+    Commons.I18n.t("tailscale.phrase2"),
+    Commons.I18n.t("tailscale.phrase3"),
+    Commons.I18n.t("tailscale.phrase4"),
+    Commons.I18n.t("tailscale.phrase5"),
+    Commons.I18n.t("tailscale.phrase6"),
+    Commons.I18n.t("tailscale.phrase7"),
+    Commons.I18n.t("tailscale.phrase8"),
+    Commons.I18n.t("tailscale.phrase9"),
+    Commons.I18n.t("tailscale.phrase10")
   ]
   readonly property string heroPhraseText: activePhrases[phraseIndex % activePhrases.length]
 
-  readonly property color foreground: bar ? bar.foreground : Color.foreground
-  readonly property color urgent: bar ? bar.urgent : Color.urgent
+  readonly property color foreground: bar ? bar.foreground : Commons.Color.foreground
+  readonly property color urgent: bar ? bar.urgent : Commons.Color.urgent
   readonly property color dim: Qt.darker(foreground, 1.55)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property bool showConnections: tailscale.accounts.length > 1 || tailscale.accountsAccessDenied
@@ -48,12 +58,14 @@ Panel {
   readonly property var exitNodes: displayExitNodes()
   readonly property bool showExitNodes: tailscale.active && (exitNodes.length > 0 || tailscale.mullvadRegions.length > 0)
   readonly property var filteredMullvadRegions: filteredMullvadRegionNodes()
-  readonly property bool headerHasCursor: cursorActive && focusSection === "header"
-  readonly property int heroRingPad: Style.space(6)
+  // Only claim the header cursor when the switch is actually on screen —
+  // "header" stays navigable, but an absent CLI leaves nothing to highlight.
+  readonly property bool headerHasCursor: cursorActive && focusSection === "header" && tailscale.installed
   readonly property color iconColor: tailscale.active ? foreground : dim
+  readonly property string toggleHint: tailscale.active ? Commons.I18n.t("tailscale.turnOff") : (tailscale.needsLogin ? Commons.I18n.t("tailscale.authorizeDevice") : Commons.I18n.t("tailscale.turnOn"))
   readonly property color barIconColor: tailscale.active ? barForeground : Qt.darker(barForeground, 1.55)
-  readonly property color hoverFill: bar ? Style.hoverFillFor(bar.foreground, Color.accent) : "transparent"
-  readonly property color selectedFill: bar ? Style.selectedFillFor(bar.foreground, Color.accent) : "transparent"
+  readonly property color hoverFill: bar ? Style.hoverFillFor(bar.foreground, Commons.Color.accent) : "transparent"
+  readonly property color selectedFill: bar ? Style.selectedFillFor(bar.foreground, Commons.Color.accent) : "transparent"
 
   function selectedPeer() {
     if (tailscale.peers.length === 0) return null
@@ -74,7 +86,7 @@ Panel {
     var nodes = []
     for (var i = 0; i < tailscale.tailnetExitNodes.length; i++) nodes.push(tailscale.tailnetExitNodes[i])
     for (var j = 0; j < recentMullvadExitNodes.length; j++) nodes.push(recentMullvadExitNodes[j])
-    if (tailscale.mullvadRegions.length > 0) nodes.push({ id: "mullvad:add", AddMullvad: true, DisplayName: "Choose Mullvad region" })
+    if (tailscale.mullvadRegions.length > 0) nodes.push({ id: "mullvad:add", AddMullvad: true, DisplayName: Commons.I18n.t("tailscale.chooseMullvadRegion") })
     return nodes
   }
 
@@ -130,10 +142,10 @@ Panel {
   }
 
   function mullvadRegionTitle(peer) {
-    if (!peer) return "Unknown"
+    if (!peer) return Commons.I18n.t("tailscale.unknown")
     var city = String(peer.City || "").trim()
     var country = String(peer.Country || "").trim()
-    if (city === "" || city === "Any") return country || String(peer.DisplayName || "Unknown")
+    if (city === "" || city === "Any") return country || String(peer.DisplayName || Commons.I18n.t("tailscale.unknown"))
     return city
   }
 
@@ -339,7 +351,7 @@ Panel {
     cursorActive = false
     if (panelFlick) panelFlick.contentY = 0
     tailscale.refresh()
-    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    Qt.callLater(function() { if (panel.loadedContent) panel.loadedContent.forceActiveFocus() })
   }
   onPeerIndexChanged: scrollCursorIntoView()
   onExitNodeIndexChanged: scrollCursorIntoView()
@@ -361,7 +373,7 @@ Panel {
     function onAccountsAccessDeniedChanged() { root.ensureCursor() }
   }
 
-  IpcHandler {
+  ShellIpc {
     target: root.ipcTarget
     function open(): void { root.open() }
     function close(): void { root.close() }
@@ -371,6 +383,7 @@ Panel {
     function refresh(): string { tailscale.refresh(); return "ok" }
     function up(): string { tailscale.loginOrUp(); return "ok" }
     function down(): string { tailscale.down(); return "ok" }
+    function toggleTailscale(): string { tailscale.toggleTailscale(); return "ok" }
     function status(): string { return tailscale.statusText }
   }
 
@@ -381,8 +394,9 @@ Panel {
     iconComponent: Component {
       Item {
         TailscaleIcon {
-          anchors.centerIn: parent
-          iconSize: Style.space(11)
+          x: (parent.width - width) / 2
+          y: (parent.height - height) / 2
+          iconSize: button.iconSize
           color: root.barIconColor
           badgeColor: root.urgent
           crossed: !tailscale.active && !tailscale.needsLogin
@@ -403,12 +417,19 @@ Panel {
     owner: root
     bar: root.bar
     open: root.opened
-    focusTarget: keyCatcher
+    focusTarget: panel.loadedContent
     contentWidth: panel.fittedContentWidth(Style.space(380))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(560))
+    contentHeight: panel.fittedContentHeight(panel.loadedContentHeight, Style.space(560))
 
-    PanelKeyCatcher {
+    content: PanelKeyCatcher {
       id: keyCatcher
+      property alias panelFlick: panelFlick
+      property alias hero: hero
+      property alias exitNodeColumn: exitNodeColumn
+      property alias mullvadSearch: mullvadSearch
+      property alias mullvadRegionColumn: mullvadRegionColumn
+      property alias peerColumn: peerColumn
+      implicitHeight: column.implicitHeight
       anchors.fill: parent
       blocked: root.copyMenuOpen
       onMoveRequested: function(dx, dy) {
@@ -445,64 +466,49 @@ Panel {
           Item {
             id: header
             width: parent.width
-            implicitHeight: hero.implicitHeight + root.heroRingPad
-            // Exposed for the hero's iconComponent, whose `root` resolves to
+            implicitHeight: hero.implicitHeight
+            // Exposed for the hero's trailingControl, whose `root` resolves to
             // PanelHero (not this Panel) — reach panel state via `header`.
             readonly property bool ringVisible: root.headerHasCursor
-            readonly property int ringPad: root.heroRingPad
             function focusHero() { root.setHeaderCursor() }
 
             PanelHero {
               id: hero
-              x: root.heroRingPad
-              y: root.heroRingPad
-              width: parent.width - root.heroRingPad
+              width: parent.width
               title: tailscale.installed ? (tailscale.selfName || "Tailscale") : "Tailscale"
-              meta: tailscale.active ? root.heroPhraseText : "Tailscale is disconnected"
+              meta: tailscale.active ? root.heroPhraseText : Commons.I18n.t("tailscale.disconnectedMeta")
               foreground: root.foreground
               fontFamily: root.fontFamily
               iconOpacity: tailscale.active ? 1.0 : 0.5
+              // Status only — the switch owns toggling, mouse and keyboard alike.
               iconComponent: Component {
-                Item {
-                  implicitWidth: icon.implicitWidth
-                  implicitHeight: icon.implicitHeight
+                TailscaleIcon {
+                  iconSize: Style.font.display
+                  color: root.iconColor
+                  badgeColor: root.urgent
+                  crossed: !tailscale.active && !tailscale.needsLogin
+                  warning: tailscale.needsLogin
+                }
+              }
 
-                  // Keyboard focus ring around the hero toggle. The hero is
-                  // inset by heroRingPad so this ring stays inside the
-                  // Flickable's clip box instead of being cut off.
-                  BorderSurface {
-                    anchors.fill: icon
-                    anchors.margins: -header.ringPad
-                    color: "transparent"
-                    radius: Style.cornerRadius
-                    visible: header.ringVisible
-                    borderSpec: Border.controlSpec("hover-cursor", hero.foreground, Color.accent)
-                  }
-
-                  TailscaleIcon {
-                    id: icon
-                    iconSize: Style.font.display
-                    color: root.iconColor
-                    badgeColor: root.urgent
-                    crossed: !tailscale.active && !tailscale.needsLogin
-                    warning: tailscale.needsLogin
-                    anchors.centerIn: parent
-                  }
-
-                  MouseArea {
-                    id: heroIconMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    enabled: tailscale.installed && !tailscale.busy
-                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onContainsMouseChanged: if (containsMouse) header.focusHero()
-                    onClicked: tailscale.toggleTailscale()
-                  }
+              // Compact on/off switch on the trailing edge of the hero, and the
+              // header's only cursor target. The service already flips `active`
+              // optimistically, so the knob throws the instant you click it.
+              trailingControl: Component {
+                ToggleSwitch {
+                  id: powerSwitch
+                  visible: tailscale.installed
+                  checked: tailscale.active
+                  busy: tailscale.busy
+                  hasCursor: header.ringVisible
+                  foreground: hero.foreground
+                  onHovered: function(on) { if (on) header.focusHero() }
+                  onToggled: tailscale.toggleTailscale()
 
                   PanelToolTip {
-                    visible: heroIconMouse.containsMouse
-                    text: tailscale.active ? "Turn Tailscale off" : (tailscale.needsLogin ? "Authorize this device" : "Turn Tailscale on")
-                    fontFamily: root.fontFamily
+                    visible: powerSwitch.containsMouse
+                    text: root.toggleHint
+                    fontFamily: hero.fontFamily
                   }
                 }
               }
@@ -510,6 +516,7 @@ Panel {
           }
 
           Text {
+            textFormat: Text.PlainText
             visible: tailscale.actionStatus !== "" || tailscale.lastError !== ""
             width: parent.width
             text: tailscale.actionStatus !== "" ? tailscale.actionStatus : tailscale.lastError
@@ -531,7 +538,8 @@ Panel {
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
               anchors.margins: Style.space(12)
-              text: "Tailscale CLI is not installed or not on PATH."
+              text: Commons.I18n.t("tailscale.notInstalled")
+              textFormat: Text.PlainText
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
@@ -550,7 +558,7 @@ Panel {
             spacing: Style.space(10)
 
             PanelSectionHeader {
-              text: "CONNECTIONS"
+              text: Commons.I18n.t("tailscale.connections")
               foreground: root.foreground
               fontFamily: root.fontFamily
             }
@@ -583,7 +591,7 @@ Panel {
             spacing: Style.space(10)
 
             PanelSectionHeader {
-              text: "EXIT NODES"
+              text: Commons.I18n.t("tailscale.exitNodes")
               foreground: root.foreground
               fontFamily: root.fontFamily
             }
@@ -613,7 +621,7 @@ Panel {
                   id: mullvadSearch
                   width: parent.width
                   foreground: root.foreground
-                  placeholderText: "Search regions"
+                  placeholderText: Commons.I18n.t("tailscale.searchRegions")
                   text: root.mullvadQuery
                   onTextChanged: {
                     root.mullvadQuery = text
@@ -649,7 +657,8 @@ Panel {
                 Text {
                   visible: root.filteredMullvadRegions.length === 0
                   width: parent.width
-                  text: "No Mullvad regions found."
+                  text: Commons.I18n.t("tailscale.noRegions")
+                  textFormat: Text.PlainText
                   color: root.dim
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.bodySmall
@@ -687,7 +696,7 @@ Panel {
             spacing: Style.space(10)
 
             PanelSectionHeader {
-              text: "MACHINES"
+              text: Commons.I18n.t("tailscale.machines")
               foreground: root.foreground
               fontFamily: root.fontFamily
             }
@@ -695,7 +704,8 @@ Panel {
             Text {
               visible: tailscale.installed && tailscale.active && tailscale.peers.length === 0
               width: parent.width
-              text: "No machines found on this tailnet."
+              text: Commons.I18n.t("tailscale.noMachines")
+              textFormat: Text.PlainText
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
@@ -737,14 +747,14 @@ Panel {
     id: phraseSwap
     PropertyAnimation {
       target: hero; property: "metaOpacity"
-      to: 0.0; duration: 180; easing.type: Easing.OutQuad
+      to: 0.0; duration: Style.duration(180); easing.type: Easing.OutQuad
     }
     ScriptAction {
       script: root.phraseIndex = (root.phraseIndex + 1) % root.activePhrases.length
     }
     PropertyAnimation {
       target: hero; property: "metaOpacity"
-      to: 1.0; duration: 260; easing.type: Easing.InQuad
+      to: 1.0; duration: Style.duration(260); easing.type: Easing.InQuad
     }
   }
 
@@ -788,7 +798,8 @@ Panel {
 
         Text {
           Layout.fillWidth: true
-          text: "Authorize Tailscale operator"
+          text: Commons.I18n.t("tailscale.authorizeOperator")
+          textFormat: Text.PlainText
           color: root.foreground
           font.family: root.fontFamily
           font.pixelSize: Style.font.body
@@ -797,7 +808,8 @@ Panel {
 
         Text {
           Layout.fillWidth: true
-          text: "Allow this user to operate this Tailscale profile"
+          text: Commons.I18n.t("tailscale.authorizeHelp")
+          textFormat: Text.PlainText
           color: root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
@@ -814,7 +826,7 @@ Panel {
     property int rowIndex: 0
     readonly property bool selectedAccount: account && account.selected === true
     readonly property bool switchingAccount: account && tailscale.switchingAccountId === String(account.id || "")
-    readonly property string accountText: account ? tailscale.accountLabel(account) : "Account"
+    readonly property string accountText: account ? tailscale.accountLabel(account) : Commons.I18n.t("tailscale.account")
 
     hasCursor: root.cursorActive && root.focusSection === "accounts" && root.accountIndex === rowIndex
     current: selectedAccount
@@ -845,7 +857,7 @@ Panel {
         opacity: accountRow.switchingAccount ? 0.45 : 1.0
 
         SequentialAnimation on opacity {
-          running: accountRow.switchingAccount
+          running: accountRow.switchingAccount && !Style.reduceMotion
           NumberAnimation { to: 1.0; duration: 420; easing.type: Easing.InOutQuad }
           NumberAnimation { to: 0.45; duration: 420; easing.type: Easing.InOutQuad }
           loops: Animation.Infinite
@@ -853,6 +865,7 @@ Panel {
       }
 
       Text {
+        textFormat: Text.PlainText
         text: accountRow.accountText
         color: root.foreground
         font.family: root.fontFamily
@@ -877,7 +890,7 @@ Panel {
     id: peerRow
     property var peer: null
     property int rowIndex: 0
-    readonly property string peerName: peer ? String(peer.DisplayName || peer.HostName || "Unknown") : "Unknown"
+    readonly property string peerName: peer ? String(peer.DisplayName || peer.HostName || Commons.I18n.t("tailscale.unknown")) : Commons.I18n.t("tailscale.unknown")
     readonly property string peerIp: peer && peer.TailscaleIPs && peer.TailscaleIPs.length > 0 ? String(peer.TailscaleIPs[0]) : ""
     readonly property string peerIpv6: {
       if (!peer || !peer.TailscaleIPv6 || peer.TailscaleIPv6.length === 0) return ""
@@ -945,6 +958,7 @@ Panel {
       spacing: Style.space(8)
 
       Text {
+        textFormat: Text.PlainText
         text: tailscale.osIcon(peer ? peer.OS : "")
         color: root.foreground
         font.family: root.fontFamily
@@ -958,6 +972,7 @@ Panel {
         spacing: Style.space(1)
 
         Text {
+          textFormat: Text.PlainText
           Layout.fillWidth: true
           text: peerRow.peerName
           color: root.foreground
@@ -967,6 +982,7 @@ Panel {
         }
 
         Text {
+          textFormat: Text.PlainText
           Layout.fillWidth: true
           text: {
             var parts = []
@@ -985,7 +1001,7 @@ Panel {
         id: sendButton
         visible: tailscale.canSendFiles(peerRow.peer)
         iconText: "󰒊"
-        tooltipText: "Send files"
+        tooltipText: Commons.I18n.t("tailscale.sendFiles")
         foreground: root.foreground
         fontFamily: root.fontFamily
         Layout.alignment: Qt.AlignVCenter
@@ -1004,7 +1020,8 @@ Panel {
 
       Popup {
         id: copyPopup
-        x: copyButton.x + copyButton.width - width
+        // Opens toward the row, from whichever end the button sits at.
+        x: copyButton.LayoutMirroring.enabled ? copyButton.x : copyButton.x + copyButton.width - width
         y: copyButton.y + copyButton.height + Style.space(4)
         width: Style.space(280)
         padding: 0
@@ -1038,11 +1055,11 @@ Panel {
             peerRow.clampCopyIndex()
             Qt.callLater(function() { copyPopupContent.forceActiveFocus() })
           } else if (root.opened) {
-            Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+            Qt.callLater(function() { if (panel.loadedContent) panel.loadedContent.forceActiveFocus() })
           }
         }
         background: BorderSurface {
-          color: Color.background
+          color: Commons.Color.background
           borderSpec: Border.flat(root.dim, 1)
           radius: Style.cornerRadius
         }
@@ -1099,6 +1116,7 @@ Panel {
       spacing: Style.space(10)
 
       Text {
+        textFormat: Text.PlainText
         Layout.fillWidth: true
         text: copyChoice.label
         color: root.foreground
@@ -1124,8 +1142,8 @@ Panel {
     readonly property bool addMullvad: peer && peer.AddMullvad === true
     readonly property bool activeExitNode: peer && peer.ExitNode === true
     readonly property bool settingExitNode: peer && tailscale.settingExitNodeId === String(peer.id || "")
-    readonly property string peerName: peer ? String(peer.DisplayName || peer.HostName || "Unknown") : "Unknown"
-    readonly property string actionTooltip: addMullvad ? "" : (activeExitNode ? "Disconnect" : "Connect")
+    readonly property string peerName: peer ? String(peer.DisplayName || peer.HostName || Commons.I18n.t("tailscale.unknown")) : Commons.I18n.t("tailscale.unknown")
+    readonly property string actionTooltip: addMullvad ? "" : (activeExitNode ? Commons.I18n.t("tailscale.disconnect") : Commons.I18n.t("tailscale.connect"))
 
     hasCursor: root.cursorActive && root.focusSection === "exitNodes" && root.exitNodeIndex === rowIndex
     current: activeExitNode || settingExitNode || (addMullvad && root.mullvadPickerOpen)
@@ -1146,6 +1164,7 @@ Panel {
 
       Text {
         id: exitNodeGlyph
+        textFormat: Text.PlainText
         text: exitNodeRow.addMullvad ? "+" : (peer && peer.Mullvad === true ? "󰖂" : "󱇢")
         color: exitNodeRow.activeExitNode || exitNodeRow.settingExitNode || exitNodeRow.addMullvad ? root.foreground : root.dim
         font.family: root.fontFamily
@@ -1155,7 +1174,7 @@ Panel {
         anchors.verticalCenter: parent.verticalCenter
 
         NumberAnimation on rotation {
-          running: exitNodeRow.settingExitNode
+          running: exitNodeRow.settingExitNode && !Style.reduceMotion
           from: 0
           to: 360
           duration: 900
@@ -1166,6 +1185,7 @@ Panel {
       }
 
       Text {
+        textFormat: Text.PlainText
         text: exitNodeRow.peerName
         color: root.foreground
         font.family: root.fontFamily
@@ -1203,7 +1223,7 @@ Panel {
     readonly property bool activeExitNode: peer && peer.ExitNode === true
     readonly property bool settingExitNode: peer && tailscale.settingExitNodeId === String(peer.id || "")
     readonly property bool selectedRegion: root.mullvadPickerOpen && root.mullvadRegionIndex === rowIndex
-    readonly property string actionTooltip: activeExitNode ? "Disconnect" : "Connect"
+    readonly property string actionTooltip: activeExitNode ? Commons.I18n.t("tailscale.disconnect") : Commons.I18n.t("tailscale.connect")
 
     foreground: root.foreground
     fill: root.hoverFill
@@ -1236,6 +1256,7 @@ Panel {
         spacing: Style.space(1)
 
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           text: regionRow.regionName
           color: root.foreground
@@ -1246,6 +1267,7 @@ Panel {
         }
 
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           text: regionRow.regionDetail
           visible: text !== ""

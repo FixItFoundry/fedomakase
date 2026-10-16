@@ -145,11 +145,82 @@ for (const manifestPath of manifests) {
       )
     }
     check(manifest.barWidget && typeof manifest.barWidget.allowMultiple === 'boolean', `${manifest.id} barWidget allowMultiple must be boolean`)
+    if (manifest.barWidget && manifest.barWidget.defaultSection !== undefined) {
+      check(
+        ['left', 'centerBegin', 'center', 'centerEnd', 'right'].includes(manifest.barWidget.defaultSection),
+        `${manifest.id} barWidget defaultSection must be left, centerBegin, center, centerEnd, or right`
+      )
+    }
   }
 
   if (relativePath.endsWith('.manifest.json')) {
     check(JSON.stringify(manifest.kinds) === JSON.stringify(['bar-widget']), `${manifest.id} sibling manifest must be a bar widget`)
   }
+
+  const clonePaths = manifest.omarchy?.clonePaths
+  if (clonePaths !== undefined) {
+    check(Array.isArray(clonePaths), `${manifest.id} omarchy.clonePaths must be an array`)
+    const cloneTargets = new Set()
+    for (const clonePath of Array.isArray(clonePaths) ? clonePaths : []) {
+      const valid = isPlainObject(clonePath)
+        && typeof clonePath.source === 'string'
+        && /^[A-Za-z0-9_./-]+$/.test(clonePath.source)
+        && typeof clonePath.target === 'string'
+        && /^[A-Za-z0-9_./-]+$/.test(clonePath.target)
+        && !clonePath.target.startsWith('/')
+        && !clonePath.target.includes('..')
+      check(
+        valid,
+        `${manifest.id} clone paths must have safe source and target paths`
+      )
+      if (valid) {
+        check(
+          fs.existsSync(path.resolve(path.dirname(manifestPath), clonePath.source)),
+          `${manifest.id} clone source ${clonePath.source} must exist`
+        )
+        check(!cloneTargets.has(clonePath.target), `${manifest.id} clone target ${clonePath.target} must be unique`)
+        cloneTargets.add(clonePath.target)
+      }
+    }
+  }
+}
+
+const byId = Object.fromEntries(manifests.map(manifestPath => {
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+  return [manifest.id, manifest]
+}))
+for (const [id, section] of Object.entries({
+  'omarchy.active-window': 'left',
+  'omarchy.dropbox': 'right'
+})) {
+  check(byId[id]?.barWidget?.defaultSection === section, `${id} must default to the ${section} bar section`)
+}
+check(byId['omarchy.media']?.barWidget?.defaultSection === undefined, 'omarchy.media must use the center fallback')
+
+for (const id of ['omarchy.lock', 'omarchy.idle', 'omarchy.polkit', 'omarchy.notifications', 'omarchy.media']) {
+  check(byId[id]?.keepLoaded === true, `${id} must stay loaded across plugin reloads`)
+}
+
+const shellSource = fs.readFileSync(path.join(root, 'shell/shell.qml'), 'utf8')
+const unloadMatch = shellSource.match(/function unloadPluginServices\(\) \{[\s\S]*?\n  \}/)
+check(!!unloadMatch, 'unloadPluginServices is defined')
+check(!!unloadMatch && /serviceKeepLoaded/.test(unloadMatch[0]), 'unloadPluginServices honors keepLoaded')
+check(
+  /function _syncServices\(\) \{[\s\S]*Drop services for plugins that have been disabled/.test(shellSource),
+  '_syncServices still drops disabled or removed services'
+)
+
+const publicManifestMatch = shellSource.match(/function publicPluginManifest\(manifest\) \{[\s\S]*?\n  \}/)
+check(!!publicManifestMatch, 'publicPluginManifest is defined')
+if (publicManifestMatch) {
+  const host = {}
+  require('vm').runInNewContext(`${publicManifestMatch[0]}\nthis.publicPluginManifest = publicPluginManifest`, host)
+  const raw = { id: 'acme.demo', __sourceDir: '/plugins/acme.demo', __isFirstParty: false, __hostCapabilities: ['authentication'] }
+  const copy = host.publicPluginManifest(raw)
+  check(copy.__sourceDir === '/plugins/acme.demo', 'third-party manifests keep their own source directory')
+  check(!('__isFirstParty' in copy) && !('__hostCapabilities' in copy), 'third-party manifests drop host trust markers')
+  copy.__sourceDir = '/elsewhere'
+  check(raw.__sourceDir === '/plugins/acme.demo', 'a plugin editing its manifest copy cannot move the registry entry')
 }
 
 assert(errors.length === 0, 'plugin manifests match shell registry contract', errors.join('\n'))

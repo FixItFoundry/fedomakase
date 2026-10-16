@@ -1,17 +1,33 @@
 #!/bin/bash
 
 # omarchy:summary=Install a supported browser
-# omarchy:args=<chrome|brave|brave-origin|edge|firefox|zen>
-# omarchy:examples=omarchy install browser firefox | omarchy install browser brave
+# omarchy:args=<chromium|chrome|brave|brave-origin|edge|firefox|zen>
+# omarchy:examples=omarchy install browser chromium | omarchy install browser firefox
 
-setup_policy_directory() {
-  sudo mkdir -p "$1"
-  sudo chmod a+rw "$1"
+set -e
+
+source "$OMARCHY_PATH/install/helpers/browser-policy.sh"
+
+opt_path="${OMARCHY_OPT_PATH:-/opt}"
+
+setup_chromium_policy_directory() {
+  browser_policy_setup_dir "$1"
 }
 
 announce_browser_installed() {
   echo ""
   echo "$1 browser installed. Make it the default via Setup > Defaults > Browser."
+}
+
+# The widevine package registers its CDM for Chromium and Firefox only; Brave
+# looks for one in its own install directory.
+link_widevine_cdm() {
+  local cdm="$opt_path/WidevineCdm/chromium"
+  local install_dir="$opt_path/$1"
+
+  if [[ -d $cdm && -d $install_dir && ! -e $install_dir/WidevineCdm ]]; then
+    as_root ln -sfn "$cdm" "$install_dir/WidevineCdm"
+  fi
 }
 
 copy_chromium_flags() {
@@ -21,56 +37,57 @@ copy_chromium_flags() {
   omarchy-install-chromium-ytdlp
 }
 
-setup_firefox_preferences() {
-  local distribution_dir="$1"
-
-  setup_policy_directory "$distribution_dir"
-  sudo cp -f "$OMARCHY_PATH/default/firefox/policies.json" "$distribution_dir/policies.json"
-}
-
 setup_firefox_wayland() {
   mkdir -p ~/.config/environment.d
   echo "MOZ_ENABLE_WAYLAND=1" > ~/.config/environment.d/omarchy-firefox-wayland.conf
 }
 
 case $1 in
+chromium)
+  echo "Installing Chromium..."
+  omarchy-pkg-add chromium
+
+  setup_chromium_policy_directory /etc/chromium/policies/managed
+  copy_chromium_flags ~/.config/chromium-flags.conf
+  omarchy-theme-set-browser
+  omarchy-lifecycle-dispatch post-install chromium
+  announce_browser_installed "Chromium"
+  ;;
 chrome)
   echo "Installing Chrome (Flatpak)..."
   flatpak install -y flathub com.google.Chrome || exit 1
 
-  setup_policy_directory /etc/opt/chrome/policies/managed
+  setup_chromium_policy_directory /etc/opt/chrome/policies/managed
   copy_chromium_flags ~/.config/chrome-flags.conf
   omarchy-theme-set-browser
+  omarchy-lifecycle-dispatch post-install chrome
   announce_browser_installed "Chrome"
   ;;
 edge)
   echo "Installing Edge..."
-  sudo dnf config-manager --add-repo https://packages.microsoft.com/yumrepos/edge 2>/dev/null || true
+  sudo dnf config-manager addrepo --from-repofile=https://packages.microsoft.com/yumrepos/edge/config.repo 2>/dev/null ||
+    sudo dnf config-manager --add-repo https://packages.microsoft.com/yumrepos/edge 2>/dev/null || true
   sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc 2>/dev/null || true
-  if (( EUID == 0 )); then
-    dnf install -y microsoft-edge-stable || exit 1
-  else
-    sudo dnf install -y microsoft-edge-stable || exit 1
-  fi
+  omarchy-pkg-add microsoft-edge-stable || exit 1
 
-  setup_policy_directory /etc/opt/edge/policies/managed
+  setup_chromium_policy_directory /etc/opt/edge/policies/managed
   copy_chromium_flags ~/.config/microsoft-edge-stable-flags.conf
   omarchy-theme-set-browser
+  omarchy-lifecycle-dispatch post-install edge
   announce_browser_installed "Edge"
   ;;
 brave)
   echo "Installing Brave..."
-  sudo dnf config-manager --add-repo https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo 2>/dev/null || true
+  sudo dnf config-manager addrepo --from-repofile=https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo 2>/dev/null ||
+    sudo dnf config-manager --add-repo https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo 2>/dev/null || true
   sudo rpm --import https://brave-browser-rpm-release.s3.brave.com/brave-core.asc 2>/dev/null || true
-  if (( EUID == 0 )); then
-    dnf install -y brave-browser || exit 1
-  else
-    sudo dnf install -y brave-browser || exit 1
-  fi
+  omarchy-pkg-add brave-browser || exit 1
 
-  setup_policy_directory /etc/brave/policies/managed
+  setup_chromium_policy_directory /etc/brave/policies/managed
   copy_chromium_flags ~/.config/brave-flags.conf
+  link_widevine_cdm brave.com/brave
   omarchy-theme-set-browser
+  omarchy-lifecycle-dispatch post-install brave
   announce_browser_installed "Brave"
   ;;
 brave-origin)
@@ -79,27 +96,25 @@ brave-origin)
   ;;
 firefox)
   echo "Installing Firefox..."
-  omarchy-pkg-add firefox || exit 1
+  omarchy-pkg-add firefox
 
-  setup_firefox_preferences /usr/lib/firefox/distribution
+  browser_policy_setup_firefox_distribution /usr/lib64/firefox/distribution
   setup_firefox_wayland
+  omarchy-lifecycle-dispatch post-install firefox
   announce_browser_installed "Firefox"
   ;;
 zen)
   echo "Installing Zen..."
   sudo dnf copr enable -y refi64/zen-browser 2>/dev/null || true
-  if (( EUID == 0 )); then
-    dnf install -y zen-browser || exit 1
-  else
-    sudo dnf install -y zen-browser || exit 1
-  fi
+  omarchy-pkg-add zen-browser || exit 1
 
-  setup_firefox_preferences /opt/zen-browser/distribution
+  browser_policy_setup_firefox_distribution /opt/zen-browser/distribution
   setup_firefox_wayland
+  omarchy-lifecycle-dispatch post-install zen
   announce_browser_installed "Zen"
   ;;
 *)
-  echo "Usage: omarchy-install-browser <chrome|brave|brave-origin|edge|firefox|zen>"
+  echo "Usage: omarchy-install-browser <chromium|chrome|brave|brave-origin|edge|firefox|zen>"
   exit 1
   ;;
 esac

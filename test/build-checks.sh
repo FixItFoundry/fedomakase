@@ -21,8 +21,8 @@ echo "=== fedomakase build checks ==="
 check "netinstall kickstart exists"            test -s "$OMARCHY/installer/omarchy-ks.cfg"
 check "offline kickstart exists"               test -s "$OMARCHY/installer/omarchy-ks-offline.cfg"
 check "gum installer exists"                   test -s "$OMARCHY/installer/omarchy-installer.sh"
-check "no stale kickstart copies at repo root" bash -c "! ls '$REPO_DIR'/installer/omarchy-ks* '$REPO_DIR'/scripts/omarchy-ks* 2>/dev/null"
-check "no .bak files committed"                bash -c "! find '$REPO_DIR' -name '*.bak' | grep -q ."
+check "no stale kickstart copies at repo root" bash -c "! ls '$REPO_DIR'/installer/omarchy-ks* '$REPO_DIR'/scripts/omarchy-ks* '$OMARCHY'/fedora-patches/omarchy-ks* 2>/dev/null"
+check "no .bak files committed"                bash -c "! find '$REPO_DIR' -name '*.bak' -o -name '*.arch-bak' | grep -q ."
 
 # --- Kickstart integrity: choices-driven install, no hardcoded creds ---
 for ks in "$OMARCHY/installer/omarchy-ks.cfg" "$OMARCHY/installer/omarchy-ks-offline.cfg"; do
@@ -31,6 +31,8 @@ for ks in "$OMARCHY/installer/omarchy-ks.cfg" "$OMARCHY/installer/omarchy-ks-off
   check "$name: has package splice markers"  bash -c "grep -q 'FEDOMAKASE-PACKAGES-BEGIN' '$ks' && grep -q 'FEDOMAKASE-PACKAGES-END' '$ks'"
   check "$name: no hardcoded default password" bash -c "! grep -Eq -- '--password=.?omarchy' '$ks'"
   check "$name: references payload installer"  grep -q 'omarchy-fedora/installer/omarchy-installer.sh' "$ks"
+  check "$name: sets dumb console & plymouth on kernel cmdline" grep -q 'systemd.tty.term.console=dumb plymouth.enable=1' "$ks"
+  check "$name: configures GRUB2 hidden timeout & bootmenu sudoers" bash -c "grep -q 'GRUB_TIMEOUT_STYLE=hidden' '$ks' && grep -q 'omarchy-grub-bootmenu' '$ks'"
 done
 check "kickstarts+builds use nett00n COPR"  bash -c "grep -rq 'nett00n' '$OMARCHY/installer/' '$REPO_DIR/build/'"
 check "no lionheartp/solopasha references remain" bash -c "! grep -rn 'lionheartp\|solopasha' '$OMARCHY/installer/' '$REPO_DIR/build/' '$OMARCHY/install/' '$OMARCHY/bin/omarchy-pkg-aur-accessible'"
@@ -39,34 +41,50 @@ check "no jcasco machine paths anywhere"     bash -c "! grep -rn 'jcasco' '$REPO
 # --- Installer <-> kickstart contract ---
 check "installer writes part cfg consumed by ks" \
   bash -c "grep -q 'fedomakase-part.cfg' '$OMARCHY/installer/omarchy-installer.sh'"
+check "installer waits for stable KMS terminal" \
+  bash -c "grep -q 'wait_for_stable_terminal' '$OMARCHY/installer/omarchy-installer.sh'"
+check "installer prompts for keyboard, hostname, and timezone" \
+  bash -c "grep -q 'OMARCHY_KEYBOARD_LAYOUTS' '$OMARCHY/installer/omarchy-installer.sh' && grep -q -- '--hostname=' '$OMARCHY/installer/omarchy-installer.sh' && grep -q '^  echo \"timezone ' '$OMARCHY/installer/omarchy-installer.sh'"
 check "installer hashes user password" \
   bash -c "grep -q 'openssl passwd -6' '$OMARCHY/installer/omarchy-installer.sh'"
 check "installer rejects double quotes in LUKS passphrase" \
   bash -c "grep -q 'cannot contain double-quote' '$OMARCHY/installer/omarchy-installer.sh'"
 
-# --- SDDM must go through uwsm (regression guard) ---
+# --- SDDM & uwsm-app & GRUB2 reboot-boot-menu ---
 check "sddm wayland conf launches via uwsm" \
   grep -q "CompositorCommand=uwsm start" "$OMARCHY/etc/sddm.conf.d/10-wayland.conf"
+check "uwsm-app wrapper present in omarchy/bin" \
+  test -s "$OMARCHY/bin/uwsm-app"
+check "omarchy-system reboot-boot-menu sets GRUB menu_show_once=1" \
+  grep -q "menu_show_once=1" "$OMARCHY/bin/omarchy-system"
 
-# --- Manifest: single source of truth health ---
+# --- Manifest & COPRs: single source of truth health ---
 MANIFEST="$OMARCHY/install/omarchy-fedora-base.packages"
+COPRS="$OMARCHY/install/omarchy-fedora-copr.repos"
 check "manifest exists and is non-trivial" \
   bash -c "(( \$(grep -vcE '^#|^\$' '$MANIFEST') > 100 ))"
 check "manifest: quickshell present"            grep -q '^quickshell$' "$MANIFEST"
 check "manifest: no waybar (QuickShell is the shell)" bash -c "! grep -q '^waybar$' '$MANIFEST'"
 check "manifest: perl-JSON-PP present (menu keybinds)"  grep -q '^perl-JSON-PP$' "$MANIFEST"
 check "manifest: libxkbcommon-utils present (keybinds)" grep -q '^libxkbcommon-utils$' "$MANIFEST"
-check "copr repos file points at nett00n"    grep -q '^nett00n/hyprland$' "$OMARCHY/install/omarchy-fedora-copr.repos"
-check "copr repos file points at whelanh"    grep -q '^whelanh/omarchy$' "$OMARCHY/install/omarchy-fedora-copr.repos"
-check "copr repos file points at ghostty"    grep -q '^scottames/ghostty$' "$OMARCHY/install/omarchy-fedora-copr.repos"
-check "copr repos file points at starship"    grep -q '^atim/starship$' "$OMARCHY/install/omarchy-fedora-copr.repos"
+check "copr repos file points at nett00n"    grep -q '^nett00n/hyprland$' "$COPRS"
+check "copr repos file points at whelanh"    grep -q '^whelanh/omarchy$' "$COPRS"
+check "copr repos file points at ghostty"    grep -q '^scottames/ghostty$' "$COPRS"
+check "copr repos file points at starship"   grep -q '^atim/starship$' "$COPRS"
+check "copr repos file points at lazygit"    grep -q '^boobaa/lazygit$' "$COPRS"
+check "copr repos file points at mise"       grep -q '^jdxcode/mise$' "$COPRS"
+check "copr repos file points at localsend"  grep -q '^anudeepd/localsend$' "$COPRS"
+check "copr repos file points at gsr"        grep -q '^brycensranch/gpu-screen-recorder-git$' "$COPRS"
+check "copr repos file points at moonlight"  grep -q '^lecris/moonlight$' "$COPRS"
 check "netinstall ks includes starship COPR repo" \
   grep -q "atim/starship" "$OMARCHY/installer/omarchy-ks.cfg"
-check "copr repos file points at lazygit"    grep -q '^boobaa/lazygit$' "$OMARCHY/install/omarchy-fedora-copr.repos"
+check "netinstall ks includes mise, localsend, gsr, moonlight COPR repos" \
+  bash -c "grep -q 'jdxcode/mise' '$OMARCHY/installer/omarchy-ks.cfg' && grep -q 'anudeepd/localsend' '$OMARCHY/installer/omarchy-ks.cfg' && grep -q 'brycensranch/gpu-screen-recorder-git' '$OMARCHY/installer/omarchy-ks.cfg' && grep -q 'lecris/moonlight' '$OMARCHY/installer/omarchy-ks.cfg'"
 check "manifest: lazygit present"            grep -q '^lazygit$' "$MANIFEST"
 check "apply.sh installs only resolvable packages" \
   grep -q 'not resolvable, skipping' "$REPO_DIR/scripts/apply.sh"
-check "manifest: whelanh set present" bash -c "grep -q '^omacut$' '$MANIFEST' && grep -q '^omawrite$' '$MANIFEST' && grep -q '^tensaku$' '$MANIFEST' && grep -q '^hyprland-preview-share-picker$' '$MANIFEST' && grep -q '^aether$' '$MANIFEST'"
+check "manifest: whelanh quattro set present" \
+  bash -c "grep -q '^omacut$' '$MANIFEST' && grep -q '^omawrite$' '$MANIFEST' && grep -q '^omasnap$' '$MANIFEST' && grep -q '^hyprland-preview-share-picker$' '$MANIFEST' && grep -q '^aether$' '$MANIFEST' && grep -q '^signed$' '$MANIFEST' && grep -q '^ttfx$' '$MANIFEST' && grep -q '^owe$' '$MANIFEST' && grep -q '^monologue$' '$MANIFEST'"
 check "manifest parses to discrete package names" \
   bash -c "mapfile -t _p < <(sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*\$//' '$MANIFEST' | grep -v '^\$'); (( \${#_p[@]} > 100 )) && [[ \${_p[0]} == hyprland ]]"
 
@@ -116,7 +134,7 @@ check "build scripts query whelanh COPR during resolution" \
 check "apply.sh resolves target user home" \
   grep -q 'TARGET_HOME' "$REPO_DIR/scripts/apply.sh"
 check "apply.sh syncs Fedora-owned helpers" \
-  bash -c "grep -q 'omarchy-refresh-repos' '$REPO_DIR/scripts/apply.sh' && grep -q 'omarchy-voxtype-install' '$REPO_DIR/scripts/apply.sh'"
+  bash -c "grep -q 'omarchy-refresh-repos' '$REPO_DIR/scripts/apply.sh' && grep -q 'omarchy-install-dictation-voxtype' '$REPO_DIR/scripts/apply.sh' && grep -q 'uwsm-app' '$REPO_DIR/scripts/apply.sh'"
 check "apply.sh syncs COPR repos + manifest" \
   grep -q 'omarchy-fedora-copr.repos' "$REPO_DIR/scripts/apply.sh"
 check "apply.sh enables COPRs on running systems" \

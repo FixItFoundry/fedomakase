@@ -1,10 +1,7 @@
 #!/bin/bash
 # Fedomakase Offline ISO Build Script
 # Builds a self-contained installer by mirroring all manifest packages
-# (fedora + updates + nett00n/hyprland + whelanh/omarchy + ghostty COPRs) into a local repo on the ISO.
-#
-# NOTE: offline install path is PHASE 2 — the file:/// mount layout in
-# omarchy-ks-offline.cfg still needs verification on real hardware.
+# (fedora + updates + COPRs from omarchy-fedora-copr.repos) into a local repo on the ISO.
 #
 # Usage:
 #   sudo bash build/build-offline-iso.sh /path/to/Fedora-Everything-netinst-x86_64-44-*.iso
@@ -24,7 +21,8 @@ fi
 for f in "$FEDORA_ISO" \
          "$OMARCHY_DIR/installer/omarchy-ks-offline.cfg" \
          "$OMARCHY_DIR/installer/omarchy-installer.sh" \
-         "$OMARCHY_DIR/install/omarchy-fedora-base.packages"; do
+         "$OMARCHY_DIR/install/omarchy-fedora-base.packages" \
+         "$OMARCHY_DIR/install/omarchy-fedora-copr.repos"; do
   [[ -e "$f" ]] || { echo "Error: required file not found: $f" >&2; exit 1; }
 done
 
@@ -36,6 +34,23 @@ COPR_GHOSTTY_URL="https://copr-be.cloud.fedoraproject.org/results/scottames/ghos
 COPR_WHELANH_URL="https://copr-be.cloud.fedoraproject.org/results/whelanh/omarchy/fedora-44-x86_64/"
 COPR_STARSHIP_URL="https://copr-be.cloud.fedoraproject.org/results/atim/starship/fedora-44-x86_64/"
 COPR_LAZYGIT_URL="https://copr-be.cloud.fedoraproject.org/results/boobaa/lazygit/fedora-44-x86_64/"
+
+COPR_ARGS=(
+  --repofrompath=copr-nett00n,"$COPR_URL" --repoid=copr-nett00n
+  --repofrompath=copr-ghostty,"$COPR_GHOSTTY_URL" --repoid=copr-ghostty
+  --repofrompath=copr-whelanh,"$COPR_WHELANH_URL" --repoid=copr-whelanh
+  --repofrompath=copr-starship,"$COPR_STARSHIP_URL" --repoid=copr-starship
+  --repofrompath=copr-lazygit,"$COPR_LAZYGIT_URL" --repoid=copr-lazygit
+)
+while IFS= read -r copr_entry; do
+  [[ -z "$copr_entry" || "$copr_entry" == \#* || "$copr_entry" == *=* ]] && continue
+  case "$copr_entry" in
+    nett00n/hyprland|scottames/ghostty|whelanh/omarchy|atim/starship|boobaa/lazygit) continue ;;
+  esac
+  slug="copr-${copr_entry//\//-}"
+  url="https://copr-be.cloud.fedoraproject.org/results/${copr_entry}/fedora-44-x86_64/"
+  COPR_ARGS+=(--repofrompath="$slug,$url" --repoid="$slug")
+done < "$OMARCHY_DIR/install/omarchy-fedora-copr.repos"
 
 echo -e "\e[32m=== Starting Fedomakase Offline ISO Build ===\e[0m"
 
@@ -88,27 +103,28 @@ mapfile -t MANIFEST_PKGS < <(sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:sp
 REPO_DIR_TARGET="$BUILD_DIR/extracted/omarchy-repo"
 mkdir -p "$REPO_DIR_TARGET"
 
+RESOLVED=()
 MISSING=()
 for pkg in "${MANIFEST_PKGS[@]}"; do
   # ponytail: per-pkg download keeps a single bad name from killing the mirror
-  dnf download --resolve --alldeps --destdir="$REPO_DIR_TARGET" \
-    --repoid=fedora --repoid=updates \
-    --repofrompath=copr-nett00n,"$COPR_URL" --repoid=copr-nett00n \
-    --repofrompath=copr-ghostty,"$COPR_GHOSTTY_URL" --repoid=copr-ghostty \
-    --repofrompath=copr-whelanh,"$COPR_WHELANH_URL" --repoid=copr-whelanh \
-    --repofrompath=copr-starship,"$COPR_STARSHIP_URL" --repoid=copr-starship \
-    --repofrompath=copr-lazygit,"$COPR_LAZYGIT_URL" --repoid=copr-lazygit \
-    "$pkg" 2>/dev/null || MISSING+=("$pkg")
+  if dnf download --resolve --alldeps --destdir="$REPO_DIR_TARGET" \
+      --repoid=fedora --repoid=updates \
+      "${COPR_ARGS[@]}" \
+      "$pkg" 2>/dev/null; then
+    RESOLVED+=("$pkg")
+  else
+    MISSING+=("$pkg")
+  fi
 done
 
 RPM_COUNT=$(find "$REPO_DIR_TARGET" -name '*.rpm' | wc -l)
-echo "  Mirrored $RPM_COUNT RPMs total."
+echo "  Mirrored $RPM_COUNT RPMs total (${#RESOLVED[@]} packages resolved, ${#MISSING[@]} excluded)."
 for pkg in "${MISSING[@]:-}"; do
   [[ -z "$pkg" ]] && continue
   echo "  WARNING: could not fully resolve: $pkg"
 done
 
-for pkg in hyprland quickshell sddm uwsm hyprland-preview-share-picker omacut omawrite tensaku; do
+for pkg in hyprland quickshell sddm uwsm hyprland-preview-share-picker omacut omawrite omasnap aether; do
   find "$REPO_DIR_TARGET" -name "${pkg}-*.rpm" | grep -q . \
     || { echo "Error: critical package '$pkg' missing from local repo — aborting." >&2; exit 1; }
 done
@@ -131,7 +147,7 @@ cp -f "$OMARCHY_DIR/installer/omarchy-ks-offline.cfg" "$KS"
   sed '/^# >>> FEDOMAKASE-PACKAGES-BEGIN$/,$d' "$KS"
   echo "# >>> FEDOMAKASE-PACKAGES-BEGIN"
   printf '@core\n@hardware-support\n'
-  printf '%s\n' "${MANIFEST_PKGS[@]}"
+  printf '%s\n' "${RESOLVED[@]}"
   echo "# >>> FEDOMAKASE-PACKAGES-END"
   sed -n '/^# >>> FEDOMAKASE-PACKAGES-END$/,$p' "$KS" | tail -n +2
 } > "$KS.tmp" && mv "$KS.tmp" "$KS"
@@ -144,7 +160,7 @@ for cfg in "$BUILD_DIR/extracted/boot/grub2/grub.cfg" "$BUILD_DIR/extracted/EFI/
     sed -i 's/set timeout=.*/set timeout=1/' "$cfg"
     sed -i 's/ inst\.ks=[^ ]*//g' "$cfg"
     sed -i 's/ inst\.text//g' "$cfg"
-    sed -i "s|inst.stage2=hd:LABEL=[^ ]*|& inst.ks=cdrom:/omarchy-ks-offline.cfg|g" "$cfg"
+    sed -i "s|inst.stage2=hd:LABEL=[^ ]*|& inst.ks=cdrom:/omarchy-ks-offline.cfg inst.text|g" "$cfg"
   fi
 done
 
@@ -191,5 +207,5 @@ xorriso -as mkisofs \
   -o "$OUTPUT_ISO" \
   "$BUILD_DIR/extracted"
 
-rm -rf "$BUILD_DIR"
+rm -rf "$BUILD_DIR" "$OMARCHY_DIR/installer/gum"
 echo -e "\e[32m=== Build Complete: $OUTPUT_ISO ===\e[0m"

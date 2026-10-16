@@ -22,7 +22,7 @@ open_ufw_port_for_private_lans() {
   local cidr
 
   for cidr in "${PRIVATE_CIDRS[@]}"; do
-    sudo ufw allow in proto "$proto" from "$cidr" to any port "$port" comment "$UFW_COMMENT" >/dev/null
+    sudo firewall-cmd --add-port="$port"/"$proto" --permanent >/dev/null
   done
 }
 
@@ -31,14 +31,14 @@ open_ufw_port_for_tailscale() {
   local port="$2"
 
   if ip link show tailscale0 >/dev/null 2>&1; then
-    sudo ufw allow in on tailscale0 to any port "$port" proto "$proto" comment "$UFW_COMMENT" >/dev/null
+    sudo firewall-cmd --add-port="$port"/"$proto" --permanent >/dev/null
   fi
 }
 
 open_ufw_ports() {
   local port
 
-  if omarchy-cmd-missing ufw; then
+  if omarchy-cmd-missing firewall-cmd; then
     echo "UFW is not installed; skipping Sunshine firewall rules."
     return
   fi
@@ -53,7 +53,7 @@ open_ufw_ports() {
     open_ufw_port_for_tailscale udp "$port"
   done
 
-  sudo ufw reload
+  sudo firewall-cmd --reload
 }
 
 install_admin_webapp() {

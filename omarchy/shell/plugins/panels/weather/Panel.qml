@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 
@@ -11,7 +12,6 @@ Panel {
   ipcTarget: "omarchy.weather"
   manageIpc: false
 
-  property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   property var anchorItem: null
   property bool openedFromHotkey: false
 
@@ -64,7 +64,9 @@ Panel {
   }
 
   function setCenterHoverRevealSuppressed(value) {
-    if (root.bar && "centerHoverRevealSuppressed" in root.bar)
+    if (root.bar && typeof root.bar.setCenterHoverRevealSuppressed === "function")
+      root.bar.setCenterHoverRevealSuppressed(value)
+    else if (root.bar && "centerHoverRevealSuppressed" in root.bar)
       root.bar.centerHoverRevealSuppressed = value
   }
 
@@ -87,6 +89,7 @@ Panel {
   onLocationQueryChanged: {
     if (savingLocation) savingLocationQueryStarted = true
     forecastRetries = 0
+    dailyForecastRetries = 0
     forecastProc.running = false
     dailyForecastProc.running = false
     Qt.callLater(refresh)
@@ -112,6 +115,7 @@ Panel {
   }
 
   property int forecastRetries: 0
+  property int dailyForecastRetries: 0
 
   // Click-to-edit state for the location label.
   property bool editingLocation: false
@@ -124,7 +128,6 @@ Panel {
 
   // Shared hero/bar icon state, updated with each successful weather response.
   property string label: ""
-  property string klass: ""
 
   // wttr's current conditions when available; open-meteo's (bundled with the
   // much faster daily forecast fetch) fill the hero while wttr is in flight.
@@ -141,13 +144,24 @@ Panel {
   readonly property int refreshMinutes: Math.max(1, parseInt(setting("refreshMinutes", 15), 10) || 15)
 
   readonly property string reportLocation:  configuredLocation || wttrLocation || (areaInfo && areaInfo.areaName && areaInfo.areaName[0] ? areaInfo.areaName[0].value : "")
-  readonly property string reportTempNum:   current ? String(useImperial ? current.temp_F : current.temp_C) : ""
+  readonly property string reportTempNum:   current ? displayNumber(useImperial ? current.temp_F : current.temp_C) : ""
   readonly property string tempUnit:        "°" + (useImperial ? "F" : "C")
   readonly property string reportFeels:     current ? formatTemp(useImperial ? current.FeelsLikeF : current.FeelsLikeC) : ""
-  readonly property string reportWind:      current ? (useImperial ? (current.windspeedMiles + " mph") : (current.windspeedKmph + " km/h")) : ""
-  readonly property string reportHumidity:  current ? (current.humidity + "%") : ""
+  readonly property string reportWind:      current ? (useImperial ? (displayNumber(current.windspeedMiles) + " mph") : (displayNumber(current.windspeedKmph) + " km/h")) : ""
+  readonly property string reportHumidity:  current ? (displayNumber(current.humidity) + "%") : ""
+
+  // The report's numbers arrive as strings ("13"), and blank when missing.
+  function displayNumber(value) {
+    if (value === undefined || value === null || value === "") return ""
+    return Commons.I18n.formatNumber(value)
+  }
 
   function refresh() {
+    // Each full refresh cycle gets a fresh retry budget, so an earlier
+    // exhausted round (e.g. waking with the network still down) doesn't
+    // starve retries for the rest of the session.
+    forecastRetries = 0
+    dailyForecastRetries = 0
     if (!forecastProc.running) forecastProc.running = true
     if (root.locationQuery === "" && !locationProc.running) locationProc.running = true
     // With stored coordinates this fetches open-meteo right away — no need
@@ -183,6 +197,11 @@ Panel {
   // ---- Location editing. Clicking the location label swaps it for a search
   //      field; picking a geocoded suggestion persists name + coordinates to
   //      the module's shell.json entry. An empty commit returns to auto.
+  // The search field lives in the panel's lazily built content.
+  function locationInput() {
+    return panel.loadedContent ? panel.loadedContent.locationField : null
+  }
+
   function startEditingLocation() {
     editingLocation = true
     savingLocation = false
@@ -190,6 +209,8 @@ Panel {
     locationSuggestions = []
     suggestionIndex = 0
     Qt.callLater(function() {
+      var locationField = root.locationInput()
+      if (!locationField) return
       locationField.text = root.configuredLocation
       locationField.selectAll()
       locationField.forceActiveFocus()
@@ -202,10 +223,12 @@ Panel {
     savingLocationQueryStarted = false
     locationSuggestions = []
     geocodeDebounce.stop()
-    Qt.callLater(function() { if (keyCatcher) keyCatcher.forceActiveFocus() })
+    Qt.callLater(function() { if (panel.loadedContent) panel.loadedContent.forceActiveFocus() })
   }
 
   function commitLocation() {
+    var locationField = root.locationInput()
+    if (!locationField) return
     var location = Model.locationCommit(locationField.text, locationSuggestions, suggestionIndex)
     if (location.name === "") {
       clearLocation()
@@ -256,7 +279,8 @@ Panel {
   // Debounced geocoding. Only one curl runs at a time; if the query moved on
   // while a fetch was in flight, the latest query is fetched right after.
   function requestGeocode() {
-    var query = locationField.text.trim()
+    var locationField = root.locationInput()
+    var query = locationField ? locationField.text.trim() : ""
     if (query.length < 2) {
       locationSuggestions = []
       return
@@ -297,16 +321,17 @@ Panel {
   }
 
   function formatTemp(value) {
-    return Model.formatTemp(value, useImperial)
+    return Model.formatTemp(value, useImperial, Commons.I18n.formatNumber)
   }
 
   function dayName(dateString) {
-    return Model.dayName(dateString, function(date) { return Qt.formatDate(date, "dddd") })
+    var locale = Qt.locale(Commons.I18n.formatLocale)
+    return Model.dayName(dateString, function(date) { return locale.standaloneDayName(date.getDay(), Locale.LongFormat) })
   }
 
   // Bare degree value (no unit letter), used in the forecast row.
   function bareTempForDay(day, kind) {
-    return Model.bareTempForDay(day, kind, useImperial)
+    return Model.bareTempForDay(day, kind, useImperial, Commons.I18n.formatNumber)
   }
 
   // Representative icon for a forecast day: the hourly entry nearest noon.
@@ -368,22 +393,42 @@ Panel {
     onTriggered: if (!forecastProc.running) forecastProc.running = true
   }
 
+  // With configured coordinates this fetch is the only thing that updates the
+  // bar icon, so a dropped response (e.g. waking before the network is back)
+  // must retry rather than wait out the refresh timer with a stale icon.
+  function scheduleDailyForecastRetry() {
+    if (dailyForecastRetries >= 3) return
+    dailyForecastRetries++
+    dailyForecastRetryTimer.restart()
+  }
+
+  Timer {
+    id: dailyForecastRetryTimer
+    interval: 2500
+    onTriggered: root.refreshDailyForecast(null)
+  }
+
   Process {
     id: dailyForecastProc
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
         var raw = String(text || "").trim()
-        if (!raw) return
+        if (!raw) {
+          root.scheduleDailyForecastRetry()
+          return
+        }
         try {
           var parsed = JSON.parse(raw)
           var parsedCurrent = Model.openMeteoCurrentCondition(parsed)
           root.dailyForecastReport = parsed
           root.label = Model.currentIcon(parsedCurrent, root.label)
+          root.dailyForecastRetries = 0
           if (Model.weatherResponseCompletesSave(root.hasConfiguredCoordinates, "open-meteo"))
             root.finishSavingLocation()
         } catch (e) {
-          // Keep last-good daily forecast on parse failure.
+          // Keep last-good daily forecast visible, but try again shortly.
+          root.scheduleDailyForecastRetry()
         }
       }
     }
@@ -418,6 +463,7 @@ Panel {
       if (!root.savingLocationQueryStarted) {
         root.savingLocationQueryStarted = true
         root.forecastRetries = 0
+        root.dailyForecastRetries = 0
         forecastProc.running = false
         dailyForecastProc.running = false
         Qt.callLater(root.refresh)
@@ -447,7 +493,7 @@ Panel {
     onTriggered: root.refresh()
   }
 
-  IpcHandler {
+  ShellIpc {
     target: root.ipcTarget
 
     function open(): void { root.openFromHotkey() }
@@ -465,12 +511,14 @@ Panel {
     bar: root.bar
     open: root.opened
     centerOnBar: true
-    focusTarget: keyCatcher
+    focusTarget: panel.loadedContent
     contentWidth: panel.fittedContentWidth(Style.space(480))
-    contentHeight: panel.fittedContentHeight(weatherColumn.implicitHeight)
+    contentHeight: panel.fittedContentHeight(panel.loadedContentHeight)
 
-    PanelKeyCatcher {
+    content: PanelKeyCatcher {
       id: keyCatcher
+      property alias locationField: locationField
+      implicitHeight: weatherColumn.implicitHeight
       anchors.fill: parent
       blocked: root.editingLocation
       onReturnRequested: root.startEditingLocation()
@@ -505,6 +553,7 @@ Panel {
 
           Text {
             id: heroIcon
+            textFormat: Text.PlainText
             anchors.verticalCenter: parent.verticalCenter
             anchors.verticalCenterOffset: 5
             text: root.label || "—"
@@ -518,9 +567,13 @@ Panel {
           Row {
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(2)
+            // A reading and its unit ("13 °C") stay in that order in a
+            // right-to-left layout too, the way bidi text keeps them.
+            LayoutMirroring.enabled: false
 
             Text {
               id: tempBig
+              textFormat: Text.PlainText
               text: root.reportTempNum || "—"
               color: root.bar.foreground
               font.family: root.bar.fontFamily
@@ -530,6 +583,7 @@ Panel {
               font.bold: true
             }
             Text {
+              textFormat: Text.PlainText
               text: root.current ? root.tempUnit : ""
               color: root.bar.foreground
               font.family: root.bar.fontFamily
@@ -567,6 +621,7 @@ Panel {
               anchors.verticalCenter: parent.verticalCenter
             }
             Text {
+              textFormat: Text.PlainText
               text: (root.reportLocation || "").toUpperCase()
               color: Qt.darker(root.bar.foreground, 1.4)
               font.family: root.bar.fontFamily
@@ -584,7 +639,7 @@ Panel {
               id: locationField
               width: Style.space(190)
               enabled: !root.savingLocation
-              placeholderText: "Search city"
+              placeholderText: Commons.I18n.t("weather.searchCity")
               foreground: root.bar.foreground
               font.family: root.bar.fontFamily
 
@@ -614,9 +669,10 @@ Panel {
               height: Style.space(18)
               anchors.verticalCenter: parent.verticalCenter
               radius: Math.min(4, Style.cornerRadius)
-              color: !root.savingLocation && clearLocationArea.containsMouse ? Style.hoverFillFor(root.bar.foreground, Color.accent) : "transparent"
+              color: !root.savingLocation && clearLocationArea.containsMouse ? Style.hoverFillFor(root.bar.foreground, Commons.Color.accent) : "transparent"
 
               Text {
+                textFormat: Text.PlainText
                 anchors.centerIn: parent
                 text: root.savingLocation ? "󰦖" : "✕"
                 font.family: root.bar.fontFamily
@@ -624,7 +680,7 @@ Panel {
                 font.pixelSize: Style.font.bodySmall
 
                 RotationAnimator on rotation {
-                  running: root.savingLocation
+                  running: root.savingLocation && !Style.reduceMotion
                   from: 0; to: 360
                   duration: 800
                   loops: Animation.Infinite
@@ -650,13 +706,15 @@ Panel {
             Column {
               spacing: Style.space(5)
               Text {
-                text: "FEELS"
+                text: Commons.I18n.t("weather.feels")
+                textFormat: Text.PlainText
                 color: Qt.darker(root.bar.foreground, 1.5)
                 font.family: root.bar.fontFamily
                 font.pixelSize: Style.font.bodySmall
                 font.letterSpacing: 1
               }
               Text {
+                textFormat: Text.PlainText
                 text: root.reportFeels
                 color: root.bar.foreground
                 font.family: root.bar.fontFamily
@@ -667,13 +725,15 @@ Panel {
             Column {
               spacing: Style.space(5)
               Text {
-                text: "WIND"
+                text: Commons.I18n.t("weather.wind")
+                textFormat: Text.PlainText
                 color: Qt.darker(root.bar.foreground, 1.5)
                 font.family: root.bar.fontFamily
                 font.pixelSize: Style.font.bodySmall
                 font.letterSpacing: 1
               }
               Text {
+                textFormat: Text.PlainText
                 text: root.reportWind
                 color: root.bar.foreground
                 font.family: root.bar.fontFamily
@@ -684,13 +744,15 @@ Panel {
             Column {
               spacing: Style.space(5)
               Text {
-                text: "HUMID"
+                text: Commons.I18n.t("weather.humid")
+                textFormat: Text.PlainText
                 color: Qt.darker(root.bar.foreground, 1.5)
                 font.family: root.bar.fontFamily
                 font.pixelSize: Style.font.bodySmall
                 font.letterSpacing: 1
               }
               Text {
+                textFormat: Text.PlainText
                 text: root.reportHumidity
                 color: root.bar.foreground
                 font.family: root.bar.fontFamily
@@ -716,7 +778,7 @@ Panel {
             width: parent.width
             height: suggestionRow.implicitHeight + Style.space(12)
             radius: Style.cornerRadius
-            color: index === root.suggestionIndex ? Style.hoverFillFor(root.bar.foreground, Color.accent) : "transparent"
+            color: index === root.suggestionIndex ? Style.hoverFillFor(root.bar.foreground, Commons.Color.accent) : "transparent"
 
             Row {
               id: suggestionRow
@@ -726,12 +788,14 @@ Panel {
               spacing: Style.space(8)
 
               Text {
+                textFormat: Text.PlainText
                 text: modelData.name
-                color: index === root.suggestionIndex ? Style.hoverStateColor(root.bar.foreground, Color.accent) : root.bar.foreground
+                color: index === root.suggestionIndex ? Style.hoverStateColor(root.bar.foreground, Commons.Color.accent) : root.bar.foreground
                 font.family: root.bar.fontFamily
                 font.pixelSize: Style.font.body
               }
               Text {
+                textFormat: Text.PlainText
                 visible: text !== ""
                 text: modelData.description
                 color: Qt.darker(root.bar.foreground, 1.5)
@@ -754,7 +818,8 @@ Panel {
 
       Text {
         visible: !root.current
-        text: "Fetching forecast…"
+        text: Commons.I18n.t("weather.fetching")
+        textFormat: Text.PlainText
         color: Qt.darker(root.bar.foreground, 1.5)
         font.family: root.bar.fontFamily
         font.pixelSize: Style.font.bodySmall
@@ -791,6 +856,7 @@ Panel {
               spacing: Style.space(10)
 
               Text {
+                textFormat: Text.PlainText
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.dayIcon(modelData)
                 color: root.bar.foreground
@@ -803,6 +869,7 @@ Panel {
                 spacing: Style.space(2)
 
                 Text {
+                  textFormat: Text.PlainText
                   text: root.dayName(modelData.date).toUpperCase()
                   color: Qt.darker(root.bar.foreground, 1.4)
                   font.family: root.bar.fontFamily
@@ -814,12 +881,14 @@ Panel {
                   spacing: Style.space(6)
 
                   Text {
+                    textFormat: Text.PlainText
                     text: root.bareTempForDay(modelData, "max")
                     color: root.bar.foreground
                     font.family: root.bar.fontFamily
                     font.pixelSize: Style.font.body
                   }
                   Text {
+                    textFormat: Text.PlainText
                     text: root.bareTempForDay(modelData, "min")
                     color: Qt.darker(root.bar.foreground, 1.5)
                     font.family: root.bar.fontFamily

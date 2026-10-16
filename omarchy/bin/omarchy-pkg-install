@@ -22,5 +22,5 @@ if [[ -n $pkg_names ]]; then
   source omarchy-sudo-keepalive
 
   echo "$pkg_names" | tr '\n' ' ' | xargs sudo dnf install -y
-  omarchy-show-done
+  omarchy-show-done $?
 fi

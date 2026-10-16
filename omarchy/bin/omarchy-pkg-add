@@ -5,16 +5,51 @@
 # omarchy:examples=omarchy pkg add jq ripgrep
 # omarchy:requires-sudo=true
 
-if omarchy-pkg-missing "$@"; then
+map_pkg() {
+  case "$1" in
+    brave-bin) echo brave-browser ;;
+    brave-origin-bin) echo brave-origin-browser ;;
+    microsoft-edge-stable-bin) echo microsoft-edge-stable ;;
+    zen-browser-bin) echo zen-browser ;;
+    google-chrome) echo google-chrome-stable ;;
+    visual-studio-code-bin) echo code ;;
+    sublime-text-4) echo sublime-text ;;
+    libreoffice-fresh) echo libreoffice-writer ;;
+    github-cli) echo gh ;;
+    mise-bin) echo mise ;;
+    nordvpn-bin) echo nordvpn ;;
+    libfprint-git) echo libfprint ;;
+    wine-staging) echo wine ;;
+    python-protobuf) echo python3-protobuf ;;
+    python-gpgme) echo python3-gpg ;;
+    lib32-vulkan-intel | lib32-vulkan-radeon) echo mesa-vulkan-drivers.i686 ;;
+    lib32-nvidia-utils | lib32-nvidia-580xx-utils) echo xorg-x11-drv-nvidia-libs.i686 ;;
+    *) echo "$1" ;;
+  esac
+}
+
+mapped=()
+for pkg in "$@"; do
+  # Skip obsidian if not available as RPM and not installed via Flatpak
+  if [[ $pkg == "obsidian" ]] && ! dnf repoquery --qf '%{name}' obsidian 2>/dev/null | grep -qx obsidian; then
+    if omarchy-cmd-present flatpak && flatpak remotes --columns=name 2>/dev/null | grep -qx flathub; then
+      flatpak install -y flathub md.obsidian.Obsidian || true
+    fi
+    continue
+  fi
+  mapped+=("$(map_pkg "$pkg")")
+done
+
+if (( ${#mapped[@]} > 0 )) && omarchy-pkg-missing "${mapped[@]}"; then
   if (( EUID == 0 )); then
-    dnf install -y "$@" || exit 1
+    dnf install -y -- "${mapped[@]}" || exit 1
   else
-    sudo dnf install -y "$@" || exit 1
+    sudo dnf install -y -- "${mapped[@]}" || exit 1
   fi
 fi
 
-for pkg in "$@"; do
-  if ! rpm -q "$pkg" &>/dev/null && ! flatpak info "$pkg" &>/dev/null; then
+for pkg in "${mapped[@]}"; do
+  if ! omarchy-pkg-present "$pkg"; then
     echo -e "\033[31mError: Package '$pkg' did not install\033[0m" >&2
     exit 1
   fi

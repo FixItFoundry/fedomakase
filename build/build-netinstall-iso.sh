@@ -26,7 +26,8 @@ fi
 for f in "$FEDORA_ISO" \
          "$OMARCHY_DIR/installer/omarchy-ks.cfg" \
          "$OMARCHY_DIR/installer/omarchy-installer.sh" \
-         "$OMARCHY_DIR/install/omarchy-fedora-base.packages"; do
+         "$OMARCHY_DIR/install/omarchy-fedora-base.packages" \
+         "$OMARCHY_DIR/install/omarchy-fedora-copr.repos"; do
   if [[ ! -e "$f" ]]; then
     echo "Error: required file not found: $f" >&2
     exit 1
@@ -41,6 +42,23 @@ COPR_GHOSTTY_URL="https://copr-be.cloud.fedoraproject.org/results/scottames/ghos
 COPR_WHELANH_URL="https://copr-be.cloud.fedoraproject.org/results/whelanh/omarchy/fedora-44-x86_64/"
 COPR_STARSHIP_URL="https://copr-be.cloud.fedoraproject.org/results/atim/starship/fedora-44-x86_64/"
 COPR_LAZYGIT_URL="https://copr-be.cloud.fedoraproject.org/results/boobaa/lazygit/fedora-44-x86_64/"
+
+COPR_ARGS=(
+  --repofrompath=copr-nett00n,"$COPR_URL" --repoid=copr-nett00n
+  --repofrompath=copr-ghostty,"$COPR_GHOSTTY_URL" --repoid=copr-ghostty
+  --repofrompath=copr-whelanh,"$COPR_WHELANH_URL" --repoid=copr-whelanh
+  --repofrompath=copr-starship,"$COPR_STARSHIP_URL" --repoid=copr-starship
+  --repofrompath=copr-lazygit,"$COPR_LAZYGIT_URL" --repoid=copr-lazygit
+)
+while IFS= read -r copr_entry; do
+  [[ -z "$copr_entry" || "$copr_entry" == \#* || "$copr_entry" == *=* ]] && continue
+  case "$copr_entry" in
+    nett00n/hyprland|scottames/ghostty|whelanh/omarchy|atim/starship|boobaa/lazygit) continue ;;
+  esac
+  slug="copr-${copr_entry//\//-}"
+  url="https://copr-be.cloud.fedoraproject.org/results/${copr_entry}/fedora-44-x86_64/"
+  COPR_ARGS+=(--repofrompath="$slug,$url" --repoid="$slug")
+done < "$OMARCHY_DIR/install/omarchy-fedora-copr.repos"
 
 echo -e "\e[32m=== Starting Fedomakase Netinstall ISO Build ===\e[0m"
 
@@ -87,17 +105,22 @@ if (( ${#MANIFEST_PKGS[@]} == 0 )); then
   exit 1
 fi
 
+mapfile -t AVAILABLE_PKGS < <(
+  dnf -q repoquery --arch=x86_64,noarch --qf '%{name}\n' \
+    --repoid=fedora --repoid=updates \
+    "${COPR_ARGS[@]}" \
+    "${MANIFEST_PKGS[@]}" 2>/dev/null | sort -u || true
+)
+
+declare -A AVAILABLE_SET=()
+for pkg in "${AVAILABLE_PKGS[@]}"; do
+  [[ -n "$pkg" ]] && AVAILABLE_SET[$pkg]=1
+done
+
 RESOLVED=()
 MISSING=()
 for pkg in "${MANIFEST_PKGS[@]}"; do
-  if dnf -q repoquery --arch=x86_64,noarch \
-      --repoid=fedora --repoid=updates \
-      --repofrompath=copr-nett00n,"$COPR_URL" --repoid=copr-nett00n \
-      --repofrompath=copr-ghostty,"$COPR_GHOSTTY_URL" --repoid=copr-ghostty \
-      --repofrompath=copr-whelanh,"$COPR_WHELANH_URL" --repoid=copr-whelanh \
-      --repofrompath=copr-starship,"$COPR_STARSHIP_URL" --repoid=copr-starship \
-      --repofrompath=copr-lazygit,"$COPR_LAZYGIT_URL" --repoid=copr-lazygit \
-      "$pkg" &>/dev/null; then
+  if [[ -n "${AVAILABLE_SET[$pkg]:-}" ]]; then
     RESOLVED+=("$pkg")
   else
     MISSING+=("$pkg")
@@ -115,7 +138,7 @@ for pkg in "${MISSING[@]:-}"; do
 done
 
 # Critical set must resolve or the ISO would install a broken desktop
-for pkg in hyprland quickshell sddm uwsm xdg-desktop-portal-hyprland hyprland-preview-share-picker omacut omawrite tensaku; do
+for pkg in hyprland quickshell sddm uwsm xdg-desktop-portal-hyprland hyprland-preview-share-picker omacut omawrite omasnap aether; do
   [[ " ${RESOLVED[*]} " == *" $pkg "* ]] || { echo "Error: critical package '$pkg' did not resolve — aborting." >&2; exit 1; }
 done
 
@@ -193,5 +216,5 @@ xorriso -as mkisofs \
   -o "$OUTPUT_ISO" \
   "$BUILD_DIR/extracted"
 
-rm -rf "$BUILD_DIR"
+rm -rf "$BUILD_DIR" "$OMARCHY_DIR/installer/gum"
 echo -e "\e[32m=== Build Complete: $OUTPUT_ISO ===\e[0m"

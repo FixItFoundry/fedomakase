@@ -7,6 +7,10 @@ set -e
 
 OMARCHY="${OMARCHY_PATH:-/usr/share/omarchy}"
 PATCH_DIR="${OMARCHY_FEDORA_PATCHES:-$OMARCHY/fedora-patches}"
+if [[ ! -d $PATCH_DIR ]] && [[ -d $HOME/.local/share/fedomakase/fedora-patches ]]; then
+  # System tree was overwritten by an upstream update; fall back to the stash
+  PATCH_DIR="$HOME/.local/share/fedomakase/fedora-patches"
+fi
 
 echo -e "\e[32mRe-applying Fedora patches...\e[0m"
 
@@ -39,18 +43,19 @@ if [[ ${1:-} == "--check" ]]; then
     fi
   done << 'CHECKS'
 bin/omarchy-pkg-aur-accessible|nett00n/hyprland|COPR health-check URL
-bin/omarchy-voxtype-install|voxtype/releases/latest|voxtype upstream RPM install
-bin/omarchy-voxtype-remove|pkg-drop voxtype$|voxtype RPM package name
+bin/omarchy-install-dictation-voxtype|voxtype/releases/latest|voxtype upstream RPM install
+bin/omarchy-remove-dictation-voxtype|pkg-drop voxtype|voxtype RPM package name
 bin/omarchy-channel-set|omarchy-refresh-repos|refresh-repos caller (channel-set)
 bin/omarchy-reinstall-pkgs|omarchy-refresh-repos|refresh-repos caller (reinstall-pkgs)
 bin/omarchy-refresh-repos||refresh-repos command present
+bin/uwsm-app||uwsm-app wrapper present
 bin/omarchy-update-aur-pkgs|from_repo|COPR-scoped package updater
 bin/omarchy-pkg-install|repoid=fedora|Fedora-scoped package browser
 config/omarchy/hooks/pre-refresh-repos.d/add-custom-repo.sample|omarchy refresh repos|hook sample text
 default/omarchy/omarchy-menu.jsonc|"label":"COPR"|menu COPR label
 etc/sddm.conf.d/10-wayland.conf|uwsm start|SDDM launches via uwsm
 install/omarchy-fedora-copr.repos|^whelanh/omarchy$|whelanh COPR enabled
-install/omarchy-fedora-base.packages|^omacut$|whelanh manifest set
+install/omarchy-fedora-base.packages|^omasnap$|whelanh manifest set
 CHECKS
   echo "=== $MISSING missing fix(es) ==="
   exit $(( MISSING > 0 ))
@@ -62,7 +67,7 @@ if (( EUID != 0 )); then
 fi
 
 # --- MENU ---
-echo "[1/10] Menu labels..."
+echo "[1/11] Menu labels..."
 M="$OMARCHY/default/omarchy/omarchy-menu.jsonc"
 apply_sed "$M" 's|"learn.arch"|"learn.fedora"|' 'learn.arch'
 apply_sed "$M" 's|"label":"Arch"|"label":"Fedora"|' '"label":"Arch"'
@@ -70,18 +75,35 @@ apply_sed "$M" 's|https://wiki.archlinux.org/title/Main_page|https://docs.fedora
 apply_sed "$M" 's|"label":"AUR"|"label":"COPR"|' '"label":"AUR"'
 apply_sed "$M" 's|\[AUR\]|[COPR]|' '\[AUR\]'
 
-# --- TPM 1.2 SUPPORT ---
-echo "[2/10] TPM 1.2 unlock script..."
+# --- TPM2 SUPPORT ---
+echo "[2/11] TPM2 unlock script..."
 if [[ -f "$PATCH_DIR/omarchy-setup-tpm2-unlock" ]]; then
   cp "$PATCH_DIR/omarchy-setup-tpm2-unlock" "$OMARCHY/bin/omarchy-setup-tpm2-unlock"
   chmod +x "$OMARCHY/bin/omarchy-setup-tpm2-unlock"
 else
   echo "  WARNING: TPM patch not found at $PATCH_DIR/omarchy-setup-tpm2-unlock"
-  echo "  Run ~/Projects/Omarchy-Fedora/apply.sh to install patches."
+  echo "  Run scripts/apply.sh (from the fedomakase repo) to install patches."
 fi
 
+# --- DRACUT TPM2 & GRUB BOOTMENU CONFIG ---
+echo "[3/11] Dracut TPM2 & GRUB boot-menu config..."
+mkdir -p /etc/dracut.conf.d
+if [[ -f /etc/dracut.conf.d/tpm2.conf ]]; then
+  if ! grep -q "tpm2-tss" /etc/dracut.conf.d/tpm2.conf 2>/dev/null; then
+    echo 'add_dracutmodules+=" tpm2-tss "' >> /etc/dracut.conf.d/tpm2.conf
+  fi
+else
+  echo 'add_dracutmodules+=" tpm2-tss "' > /etc/dracut.conf.d/tpm2.conf
+fi
+# Remove legacy keyfile or duplicate config names
+rm -f /etc/dracut.conf.d/omarchy-keyfile.conf /etc/dracut.conf.d/fedomakase-tpm2.conf
+
+mkdir -p /etc/sudoers.d
+echo '%wheel ALL=(root) NOPASSWD: /usr/bin/grub2-editenv - set menu_show_once=1' > /etc/sudoers.d/omarchy-grub-bootmenu
+chmod 0440 /etc/sudoers.d/omarchy-grub-bootmenu
+
 # --- WEBAPP MANIFESTS ---
-echo "[3/11] Webapp manifests..."
+echo "[4/11] Webapp manifests..."
 if [[ -d "$OMARCHY/applications" ]]; then
   for user_dir in /home/*; do
     if [[ -d "$user_dir" ]]; then
@@ -94,23 +116,9 @@ if [[ -d "$OMARCHY/applications" ]]; then
       fi
     fi
   done
-  # Also install for any new users via skel
   mkdir -p /etc/skel/.local/share/applications
   cp -f "$OMARCHY/applications/"*.desktop /etc/skel/.local/share/applications/ 2>/dev/null || true
   cp -rf "$OMARCHY/applications/icons" /etc/skel/.local/share/icons/ 2>/dev/null || true
-fi
-
-# --- KICKSTART ---
-echo "[4/11] Kickstart files..."
-if [[ -d "$PATCH_DIR" ]]; then
-  for ks in omarchy-ks.cfg omarchy-ks-offline.cfg; do
-    if [[ -f "$PATCH_DIR/$ks" ]]; then
-      cp "$PATCH_DIR/$ks" "$OMARCHY/installer/$ks"
-      chmod +x "$OMARCHY/installer/$ks"
-    fi
-  done
-else
-  echo "  WARNING: Kickstart patches not found in $PATCH_DIR"
 fi
 
 # --- UPDATE SCRIPTS ---
@@ -127,8 +135,8 @@ cat > "$OMARCHY/bin/omarchy-update-analyze-logs" << 'EOF'
 update_log="/tmp/omarchy-update.log"
 
 # Check for dracut initramfs generation failure
-if grep -qi "dracut\|initramfs\|initrd" "$update_log"; then
-  if grep -qi "error\|fail" "$update_log" | grep -qi "dracut\|initramfs\|initrd"; then
+if [[ -f "$update_log" ]] && grep -qi "dracut\|initramfs\|initrd" "$update_log"; then
+  if grep -i "error\|fail" "$update_log" 2>/dev/null | grep -qi "dracut\|initramfs\|initrd"; then
     echo -e '\e[31mError: Initramfs generation may have failed. Review logs before restart.\e[0m'
     echo
   fi
@@ -136,13 +144,22 @@ fi
 EOF
 chmod +x "$OMARCHY/bin/omarchy-update-analyze-logs"
 
-# --- INSTALL SCRIPTS ---
-echo "[6/11] Install scripts..."
+# --- INSTALL SCRIPTS & UWSM-APP ---
+echo "[6/11] Install scripts and uwsm-app wrapper..."
 B="$OMARCHY/bin"
+
+# Ensure uwsm-app wrapper is present and linked onto system PATH
+cat > "$B/uwsm-app" << 'EOF'
+#!/bin/sh
+exec uwsm app "$@"
+EOF
+chmod +x "$B/uwsm-app"
+ln -sf "$B/uwsm-app" /usr/local/bin/uwsm-app
+
 apply_sed "$B/omarchy-install-browser" 's|microsoft-edge-stable-bin|microsoft-edge-stable|' 'microsoft-edge-stable-bin'
 apply_sed "$B/omarchy-install-browser" 's|brave-bin|brave-browser|' 'brave-bin'
 apply_sed "$B/omarchy-install-browser" 's|brave-origin-bin|brave-browser-origin|' 'brave-origin-bin'
-apply_sed "$B/omarchy-install-browser" 's|zen-browser-bin|zen|' 'zen-browser-bin'
+apply_sed "$B/omarchy-install-browser" 's|zen-browser-bin|zen-browser|' 'zen-browser-bin'
 apply_sed "$B/omarchy-install-service-nordvpn" 's|nordvpn-bin|nordvpn|' 'nordvpn-bin'
 apply_sed "$B/omarchy-install-editor-emacs" 's|via the omarchy-emacs AUR package|via COPR|' 'AUR package'
 apply_sed "$B/omarchy-install-gaming-retroarch" 's|installed by pacman|installed by dnf|' 'installed by pacman'
@@ -155,6 +172,25 @@ done
 apply_sed "$B/omarchy-install-gaming-retroarch" 's|libretro-vice-x.*-git||' 'libretro-vice-x.*-git'
 apply_sed "$B/omarchy-install-gaming-retroarch" 's|libretro-yabause \\$|libretro-yabause|' 'libretro-yabause'
 
+# Firewall: switch ufw to firewalld
+apply_sed "$B/omarchy-install-service-sunshine" 's|omarchy-cmd-missing ufw|omarchy-cmd-missing firewall-cmd|' 'omarchy-cmd-missing ufw'
+apply_sed "$B/omarchy-install-service-sunshine" 's|sudo ufw allow in proto "$proto" from "$cidr" to any port "$port".*|sudo firewall-cmd --add-port="$port"/"$proto" --permanent >/dev/null|' 'sudo ufw allow in proto'
+apply_sed "$B/omarchy-install-service-sunshine" 's|sudo ufw allow in on tailscale0 to any port "$port" proto "$proto".*|sudo firewall-cmd --add-port="$port"/"$proto" --permanent >/dev/null|' 'sudo ufw allow in on tailscale0'
+apply_sed "$B/omarchy-install-service-sunshine" 's|sudo ufw reload|sudo firewall-cmd --reload|' 'sudo ufw reload'
+
+apply_sed "$B/omarchy-remove-service-sunshine" 's|omarchy-cmd-missing ufw|omarchy-cmd-missing firewall-cmd|' 'omarchy-cmd-missing ufw'
+apply_sed "$B/omarchy-remove-service-sunshine" 's|delete_ufw_rule allow in proto "$proto" from "$cidr" to any port "$port"|sudo firewall-cmd --remove-port="$port"/"$proto" --permanent >/dev/null 2>\&1 \|\| true|' 'delete_ufw_rule allow in proto'
+apply_sed "$B/omarchy-remove-service-sunshine" 's|delete_ufw_rule allow in on tailscale0 to any port "$port" proto "$proto"|sudo firewall-cmd --remove-port="$port"/"$proto" --permanent >/dev/null 2>\&1 \|\| true|' 'delete_ufw_rule allow in on tailscale0'
+apply_sed "$B/omarchy-remove-service-sunshine" 's|sudo ufw reload|sudo firewall-cmd --reload|' 'sudo ufw reload'
+
+apply_sed "$B/omarchy-setup-security-sshd" 's|omarchy-cmd-missing ufw|omarchy-cmd-missing firewall-cmd|' 'omarchy-cmd-missing ufw'
+apply_sed "$B/omarchy-setup-security-sshd" 's|sudo ufw limit 22/tcp.*|sudo firewall-cmd --add-service=ssh --permanent >/dev/null|' 'sudo ufw limit 22/tcp'
+apply_sed "$B/omarchy-setup-security-sshd" 's|sudo ufw reload.*|sudo firewall-cmd --reload >/dev/null|' 'sudo ufw reload'
+
+apply_sed "$B/omarchy-remove-security-sshd" 's|omarchy-cmd-present ufw|omarchy-cmd-present firewall-cmd|' 'omarchy-cmd-present ufw'
+apply_sed "$B/omarchy-remove-security-sshd" 's|sudo ufw --force delete limit 22/tcp.*|sudo firewall-cmd --remove-service=ssh --permanent >/dev/null 2>\&1 \|\| true|' 'sudo ufw --force delete limit 22/tcp'
+apply_sed "$B/omarchy-remove-security-sshd" 's|sudo ufw reload.*|sudo firewall-cmd --reload >/dev/null|' 'sudo ufw reload'
+
 # --- SYSTEMD ---
 echo "[7/11] Systemd units..."
 apply_sed "$OMARCHY/default/systemd/user/omarchy-migrate-notify.service" 's|pacman writes|dnf writes|' 'pacman writes'
@@ -162,20 +198,22 @@ apply_sed "$OMARCHY/default/systemd/user/omarchy-migrate-notify.service" 's|pacm
 # --- DEV-PKG-TEST ---
 echo "[8/11] Dev package test..."
 if [[ -f "$PATCH_DIR/omarchy-dev-pkg-test" ]]; then
-  cp "$OMARCHY/bin/omarchy-dev-pkg-test" "$OMARCHY/bin/omarchy-dev-pkg-test.arch-bak" 2>/dev/null || true
   cp "$PATCH_DIR/omarchy-dev-pkg-test" "$OMARCHY/bin/omarchy-dev-pkg-test"
   chmod +x "$OMARCHY/bin/omarchy-dev-pkg-test"
+  rm -f "$OMARCHY/bin/omarchy-dev-pkg-test.arch-bak"
 else
   echo "  WARNING: dev-pkg-test patch not found in $PATCH_DIR"
 fi
 
 # --- SKILL ---
 echo "[9/11] Skill docs..."
-S="$OMARCHY/default/omarchy-skill/SKILL.md"
-apply_sed "$S" 's|opinionated Arch Linux|opinionated Fedora Linux|' 'opinionated Arch Linux'
-apply_sed "$S" 's|\*\*Arch Linux\*\*|**Fedora Linux**|' '\*\*Arch Linux\*\*'
-apply_sed "$S" 's|pre-refresh-pacman.d/|pre-refresh-repos.d/|' 'pre-refresh-pacman.d/'
-apply_sed "$S" 's|omarchy pkg aur add <pkgs\.\.\.>.*for AUR-only packages|omarchy pkg add <pkgs...> for COPR packages|' 'pkg aur add'
+for S in "$OMARCHY/default/agents/skills/omarchy/SKILL.md" "$OMARCHY/default/omarchy-skill/SKILL.md"; do
+  [[ -f "$S" ]] || continue
+  apply_sed "$S" 's|opinionated Arch Linux|opinionated Fedora Linux|' 'opinionated Arch Linux'
+  apply_sed "$S" 's|\*\*Arch Linux\*\*|**Fedora Linux**|' '\*\*Arch Linux\*\*'
+  apply_sed "$S" 's|pre-refresh-pacman.d/|pre-refresh-repos.d/|' 'pre-refresh-pacman.d/'
+  apply_sed "$S" 's|omarchy pkg aur add <pkgs\.\.\.>.*for AUR-only packages|omarchy pkg add <pkgs...> for COPR packages|' 'pkg aur add'
+done
 
 # --- HOOK SAMPLE ---
 echo "[10/11] Hook samples..."
@@ -223,10 +261,12 @@ apply_sed "$FL" 's|final pacman/udev/localdb passes|final dnf/udev/localdb passe
 apply_sed "$FL" 's|in `omarchy-settings` PKGBUILD|in `omarchy-settings` spec file|g' 'PKGBUILD'
 
 # migrations.md
-MM="$D/docs/migrations.md"
-apply_sed "$MM" 's|state that pacman cannot safely own|state that dnf cannot safely own|' 'pacman cannot safely own'
-apply_sed "$MM" 's|waits for any active pacman transaction|waits for any active dnf transaction|' 'active pacman transaction'
-apply_sed "$MM" 's|OMARCHY_ALLOW_DIRECT_PACMAN=1 pacman|OMARCHY_ALLOW_DIRECT_DNF=1 dnf|g' 'OMARCHY_ALLOW_DIRECT_PACMAN'
+for MM in "$D/agents/skills/migrations.md" "$D/docs/migrations.md"; do
+  [[ -f "$MM" ]] || continue
+  apply_sed "$MM" 's|state that pacman cannot safely own|state that dnf cannot safely own|' 'pacman cannot safely own'
+  apply_sed "$MM" 's|waits for any active pacman transaction|waits for any active dnf transaction|' 'active pacman transaction'
+  apply_sed "$MM" 's|OMARCHY_ALLOW_DIRECT_PACMAN=1 pacman|OMARCHY_ALLOW_DIRECT_DNF=1 dnf|g' 'OMARCHY_ALLOW_DIRECT_PACMAN'
+done
 
 # update-process.md
 UP="$D/docs/update-process.md"

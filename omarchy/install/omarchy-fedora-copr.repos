@@ -9,8 +9,11 @@
 nett00n/hyprland
 
 # Omarchy first-party binaries, source-built for Fedora.
-# Covers: aether, cliamp, elsewhen, herdr, hyprland-preview-share-picker,
-#         omacalc, omacut, omawrite, tensaku, try, ttfx
+# Covers: aether, cliamp, disktree-bin, elsewhen, gliff, herdr, hype,
+#         hyprland-preview-share-picker, monologue, omacalc, omacut,
+#         omapresent, omarchy-emacs, omarchy-hyprland-titlebars, omasnap,
+#         omawrite, owe, owe-lockfeed, signed, superwhisper-bin, try,
+#         ttfx, voxtype-bin
 whelanh/omarchy
 
 # Ghostty Terminal — REQUIRED: ghostty is in the base manifest and is NOT
@@ -24,6 +27,22 @@ atim/starship
 # Lazygit — not in Fedora 44 repos. Dedicated COPR tracking upstream.
 # Verified building for fedora-44 x86_64.
 boobaa/lazygit
+
+# Mise runtime manager — required by Omarchy dev-env and agent stubs.
+# Verified building for fedora-44 x86_64.
+jdxcode/mise
+
+# LocalSend — LAN file sharing (Super + Ctrl + S).
+# Verified building for fedora-44 x86_64.
+anudeepd/localsend
+
+# GPU Screen Recorder — hardware-accelerated Wayland screen recording.
+# Verified building for fedora-44 x86_64.
+brycensranch/gpu-screen-recorder-git
+
+# Moonlight Qt — GameStream / Sunshine client preinstall.
+# Verified building for fedora-44 x86_64.
+lecris/moonlight
 
 # Flathub Repository URL for Desktop Flatpak Apps
 FLATHUB_URL=https://dl.flathub.org/repo/flathub.flatpakrepo

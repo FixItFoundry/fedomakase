@@ -38,12 +38,13 @@ printf '\n' >>"$OMARCHY_DEV_UNLINK_TEST_LOG"
 SH
 chmod +x "$stub_bin/gum"
 
-cat >"$stub_bin/omarchy-system-reboot" <<'SH'
+cat >"$stub_bin/omarchy-system" <<'SH'
 #!/bin/bash
+[[ $1 == "reboot" ]] || exit 2
 
 printf 'reboot\n' >>"$OMARCHY_DEV_UNLINK_TEST_LOG"
 SH
-chmod +x "$stub_bin/omarchy-system-reboot"
+chmod +x "$stub_bin/omarchy-system"
 
 run_unlink() {
   HOME="$test_tmp/home" \
@@ -60,6 +61,12 @@ grep -Fx $'sudo\ttee\t/etc/omarchy.conf' "$log_file" >/dev/null ||
   fail "dev unlink writes the package path without rebooting" "$(cat "$log_file")"
 [[ $(<"$conf_file") == 'export OMARCHY_PATH="/usr/share/omarchy"' ]] ||
   fail "dev unlink writes the package path guard" "$(<"$conf_file")"
+
+# Left behind, it keeps sudo running a checkout nothing else points at.
+grep -Fx $'sudo\trm\t-f\t/etc/sudoers.d/omarchy-dev-path' "$log_file" >/dev/null ||
+  fail "dev unlink drops the sudo secure_path drop-in" "$(cat "$log_file")"
+pass "dev unlink drops the sudo secure_path drop-in"
+
 if grep -Eq '^(gum|reboot)' "$log_file"; then
   fail "dev unlink --no-reboot skips the reboot prompt" "$(cat "$log_file")"
 fi

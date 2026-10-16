@@ -29,11 +29,12 @@ trap 'rm -rf "$FIXTURE"' EXIT
 mkdir -p "$FIXTURE/bin" "$FIXTURE/default/omarchy" "$FIXTURE/etc/sddm.conf.d" \
   "$FIXTURE/install" "$FIXTURE/config/omarchy/hooks/pre-refresh-repos.d"
 cp "$OMARCHY/bin/omarchy-pkg-aur-accessible" \
-   "$OMARCHY/bin/omarchy-voxtype-install" \
-   "$OMARCHY/bin/omarchy-voxtype-remove" \
+   "$OMARCHY/bin/omarchy-install-dictation-voxtype" \
+   "$OMARCHY/bin/omarchy-remove-dictation-voxtype" \
    "$OMARCHY/bin/omarchy-channel-set" \
    "$OMARCHY/bin/omarchy-reinstall-pkgs" \
    "$OMARCHY/bin/omarchy-refresh-repos" \
+   "$OMARCHY/bin/uwsm-app" \
    "$OMARCHY/bin/omarchy-update-aur-pkgs" \
    "$OMARCHY/bin/omarchy-pkg-install" "$FIXTURE/bin/"
 cp "$OMARCHY/default/omarchy/omarchy-menu.jsonc" "$FIXTURE/default/omarchy/"

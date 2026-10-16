@@ -3,10 +3,8 @@
 # omarchy:summary=Returns true if any of the named packages are missing from the system (or false if they're all there).
 # omarchy:args=<packages...>
 
-for pkg in "$@"; do
-  if ! rpm -q "$pkg" &>/dev/null && ! flatpak info "$pkg" &>/dev/null; then
-    exit 0
-  fi
-done
+if omarchy-pkg-present "$@"; then
+  exit 1
+fi
 
-exit 1
+exit 0

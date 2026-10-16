@@ -5,11 +5,7 @@
 
 echo "Installing NordVPN..."
 sudo dnf install -y https://repo.nordvpn.com/yum/nordvpn/centos/noarch/Packages/nordvpn-release-1.0.0-1.noarch.rpm 2>/dev/null || true
-if (( EUID == 0 )); then
-  dnf install -y nordvpn || exit 1
-else
-  sudo dnf install -y nordvpn || exit 1
-fi
+omarchy-pkg-add nordvpn || exit 1
 
 echo "Enabling NordVPN daemon..."
 sudo systemctl enable --now nordvpnd
@@ -20,4 +16,4 @@ sudo usermod -aG nordvpn "$USER"
 echo -e "\nNordVPN installed! After reboot, run 'nordvpn login' to authenticate."
 
 echo
-gum confirm "Reboot now to make NordVPN usable?" && omarchy-system-reboot
+gum confirm --affirmative "$(omarchy-i18n common.yes)" --negative "$(omarchy-i18n common.no)" "$(omarchy-i18n nordvpn.rebootNow)" && omarchy-system reboot

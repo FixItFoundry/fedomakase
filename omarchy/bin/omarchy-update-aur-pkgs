@@ -3,12 +3,17 @@
 # omarchy:summary=Update COPR packages (Fedora equivalent of AUR updates)
 # omarchy:requires-sudo=true
 
-# Upgrade packages that were installed from COPR repos. Everything else
-# is handled by omarchy-update-system-pkgs.
+# Inside `omarchy-update`, `omarchy-update-system-pkgs` has already upgraded
+# all enabled DNF and COPR repositories (`dnf upgrade --refresh -y`).
+if [[ ${OMARCHY_UPDATE_LOGGED:-0} == "1" ]]; then
+  exit 0
+fi
+
+# Standalone invocation: upgrade packages that were installed from COPR repos.
 pkgs=$(dnf repoquery --installed --qf '%{name} %{from_repo}' 2>/dev/null | awk '$2 ~ /^copr/ {print $1}')
 [[ -n $pkgs ]] || exit 0
 
-echo "Updating COPR packages..."
+echo -e "\e[32m\nUpdate COPR packages\e[0m"
 if (( EUID == 0 )); then
   dnf upgrade -y $pkgs
 else

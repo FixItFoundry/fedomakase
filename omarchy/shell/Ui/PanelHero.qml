@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 
 Item {
   id: root
@@ -8,16 +9,22 @@ Item {
   property string title: ""
   property string meta: ""
   property string detail: ""
-  property color foreground: Color.foreground
+  property color foreground: Commons.Color.foreground
   property string fontFamily: Style.font.family
   property real iconSize: Style.font.display
   property real iconOpacity: 1.0
   property alias metaOpacity: metaText.opacity
 
+  // Optional control pinned to the trailing edge of the hero — a ToggleSwitch,
+  // a small button. The hero centers it against the labels and reserves the
+  // space itself, so callers never do the geometry.
+  property Component trailingControl: null
+
   readonly property color dim: Qt.darker(foreground, 1.4)
+  readonly property real trailingInset: trailingLoader.item && trailingLoader.item.visible ? trailingLoader.width + Style.space(12) : 0
 
   width: parent ? parent.width : implicitWidth
-  implicitHeight: Math.max(iconLoader.implicitHeight, heroLabels.implicitHeight)
+  implicitHeight: Math.max(iconLoader.implicitHeight, heroLabels.implicitHeight, trailingLoader.implicitHeight)
 
   Loader {
     id: iconLoader
@@ -32,6 +39,7 @@ Item {
     anchors.left: iconLoader.right
     anchors.leftMargin: Style.space(14)
     anchors.right: parent.right
+    anchors.rightMargin: root.trailingInset
     anchors.verticalCenter: parent.verticalCenter
     spacing: Style.space(2)
 
@@ -41,6 +49,7 @@ Item {
       width: parent.width
 
       Text {
+        textFormat: Text.PlainText
         visible: root.title !== ""
         text: root.title
         width: Math.min(implicitWidth, Math.max(0, parent.width - (detailPill.visible ? detailPill.implicitWidth + Style.space(8) : 0)))
@@ -63,11 +72,12 @@ Item {
         implicitHeight: detailText.implicitHeight + Style.space(4)
         anchors.verticalCenter: parent.verticalCenter
         color: "transparent"
-        borderSpec: Border.controlSpec("normal", root.foreground, Color.accent)
+        borderSpec: Border.controlSpec("normal", root.foreground, Commons.Color.accent)
         radius: Style.cornerRadius
 
         Text {
           id: detailText
+          textFormat: Text.PlainText
           anchors.centerIn: parent
           text: root.detail
           color: root.dim
@@ -80,6 +90,7 @@ Item {
 
     Text {
       id: metaText
+      textFormat: Text.PlainText
       width: parent.width
       text: root.meta.toUpperCase()
       visible: text !== ""
@@ -90,5 +101,12 @@ Item {
       font.letterSpacing: 1.2
       elide: Text.ElideRight
     }
+  }
+
+  Loader {
+    id: trailingLoader
+    sourceComponent: root.trailingControl
+    anchors.right: parent.right
+    anchors.verticalCenter: parent.verticalCenter
   }
 }

@@ -27,5 +27,7 @@ if [[ -n $pkg_names ]]; then
   source omarchy-sudo-keepalive
 
   echo "$pkg_names" | tr '\n' ' ' | xargs sudo dnf install -y
-  omarchy-show-done
+  code=$?
+  sudo updatedb --prune-bind-mounts=no --add-prunepaths=/.snapshots 2>/dev/null || true
+  omarchy-show-done $code
 fi

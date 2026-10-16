@@ -1,18 +1,12 @@
 # Configure DNF repositories after package installation completes.
-# On Fedora, we ensure COPR repos are enabled and DNF is configured correctly.
+# On Fedora, we ensure COPR repos from the single source of truth are enabled.
 
-# Restore cups-browsed config if needed
-if [[ -f /etc/cups/cups-browsed.conf.rpmnew ]]; then
-  cp -f /etc/cups/cups-browsed.conf.rpmnew /etc/cups/cups-browsed.conf
-fi
-
-# Enable COPR repos if not already enabled
-if command -v dnf &>/dev/null; then
-  dnf copr enable -y nett00n/hyprland 2>/dev/null || true
-  dnf copr enable -y whelanh/omarchy 2>/dev/null || true
-  dnf copr enable -y scottames/ghostty 2>/dev/null || true
-  dnf copr enable -y atim/starship 2>/dev/null || true
-  dnf copr enable -y boobaa/lazygit 2>/dev/null || true
+COPR_FILE="${OMARCHY_INSTALL:-/usr/share/omarchy/install}/omarchy-fedora-copr.repos"
+if command -v dnf &>/dev/null && [[ -f "$COPR_FILE" ]]; then
+  while IFS= read -r copr; do
+    [[ -z "$copr" || "$copr" =~ ^[[:space:]]*# ]] && continue
+    dnf copr enable -y "$copr" 2>/dev/null || true
+  done < "$COPR_FILE"
 fi
 
 # Install all base packages from the manifest (single source of truth)

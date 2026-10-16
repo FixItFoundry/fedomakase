@@ -22,7 +22,7 @@ close_ufw_port_for_private_lans() {
   local cidr
 
   for cidr in "${PRIVATE_CIDRS[@]}"; do
-    delete_ufw_rule allow in proto "$proto" from "$cidr" to any port "$port"
+    sudo firewall-cmd --remove-port="$port"/"$proto" --permanent >/dev/null 2>&1 || true
   done
 }
 
@@ -30,13 +30,13 @@ close_ufw_port_for_tailscale() {
   local proto="$1"
   local port="$2"
 
-  delete_ufw_rule allow in on tailscale0 to any port "$port" proto "$proto"
+  sudo firewall-cmd --remove-port="$port"/"$proto" --permanent >/dev/null 2>&1 || true
 }
 
 close_ufw_ports() {
   local port
 
-  if omarchy-cmd-missing ufw; then
+  if omarchy-cmd-missing firewall-cmd; then
     return
   fi
 
@@ -50,7 +50,7 @@ close_ufw_ports() {
     close_ufw_port_for_tailscale udp "$port"
   done
 
-  sudo ufw reload
+  sudo firewall-cmd --reload
 }
 
 disable_hyprland_autostart() {

@@ -26,6 +26,9 @@ Item {
   property int launchSerial: 0
   property int launchToplevelCount: 0
   property var launchActiveToplevel: null
+  // True while the launch OSD is on screen. It outlives the launch that opened
+  // it: the OSD shows with duration 0, so only closeLaunchFeedback() takes it
+  // down.
   property bool launchOsdOpen: false
   property string launchOsdMessage: ""
 
@@ -75,7 +78,26 @@ Item {
     var id = String(desktopId || "")
     if (!id) return
     root.beginLaunchFeedback(name)
-    Util.execDetached("gtk-launch " + Util.shellQuote(id))
+    // A terminal app goes through Omarchy's TUI launcher, which names its
+    // terminal window after the command (org.omarchy.nvim), so the dock and
+    // titlebars can tell Neovim from the terminal it runs in.
+    var command = root.terminalCommand(DesktopEntries.byId(id))
+    if (command.length > 0) {
+      Util.execDetached("omarchy-launch-tui " + command.map(function(word) { return Util.shellQuote(word) }).join(" "))
+      return
+    }
+    // Start gtk-launch inside a scope under app-graphical.slice so apps do not
+    // inherit wayland-wm@.service. Keeping gtk-launch as the desktop-entry
+    // resolver supports IDs with spaces and entries that UWSM rejects.
+    // Keep the .desktop suffix or ids like org.telegram.desktop won't resolve.
+    Util.execDetached("uwsm-app -- gtk-launch " + Util.shellQuote(id + ".desktop"))
+  }
+
+  // The command a terminal entry runs, without the field codes it leaves for a
+  // launcher to fill in; empty for an entry that is not run in a terminal.
+  function terminalCommand(entry) {
+    if (!entry || !entry.runInTerminal) return []
+    return (entry.command || []).filter(function(word) { return !/^%[a-zA-Z]$/.test(String(word)) })
   }
 
   function remove(desktopId, name) {
@@ -120,12 +142,12 @@ Item {
     return [
       'dirs="$HOME/.icons $HOME/.local/share/icons";',
       'IFS=":"; for d in ${XDG_DATA_DIRS:-/usr/local/share:/usr/share}; do dirs="$dirs $d/icons"; done; unset IFS;',
-      'for ext in svg png; do',
+      '{',
       '  for base in $dirs; do',
-      '    [[ -d $base ]] && find "$base" \\( -path "*/apps/*" -o -path "*/devices/*" \\) -name "*.$ext" 2>/dev/null;',
+      '    [[ -d $base ]] && find "$base" \\( -path "*/apps/*" -o -path "*/devices/*" \\) \\( -name "*.svg" -o -name "*.png" \\) 2>/dev/null;',
       '  done;',
-      '  find /usr/share/pixmaps -maxdepth 1 -name "*.$ext" 2>/dev/null;',
-      'done'
+      '  find /usr/share/pixmaps -maxdepth 1 \\( -name "*.svg" -o -name "*.png" \\) 2>/dev/null;',
+      '} | awk \'/\\.svg$/ { print; next } { png[++n] = $0 } END { for (i = 1; i <= n; i++) print png[i] }\''
     ].join(' ')
   }
 
@@ -154,8 +176,7 @@ Item {
     root.launchSerial++
     root.launchToplevelCount = root.toplevelCount()
     root.launchActiveToplevel = ToplevelManager.activeToplevel
-    root.launchOsdOpen = false
-    root.launchOsdMessage = "Launching " + String(name || "application") + "…"
+    root.launchOsdMessage = name ? I18n.t("appLibrary.launching").arg(String(name)) : I18n.t("appLibrary.launchingApp")
     launchDelay.restart()
     launchTimeout.restart()
   }
@@ -181,9 +202,13 @@ Item {
     property string text: ""
   }
 
+  // Both scans must run in non-login shells. A login shell sources the user's
+  // profile, and tools like mise touch ~/.local/share on activation — a
+  // directory the desktop-entry watcher monitors — so every scan would
+  // trigger the next one, pinning a core at idle.
   Process {
     id: hiddenEntryScan
-    command: ["bash", "-lc", root.hiddenEntryScanCommand()]
+    command: ["bash", "-c", root.hiddenEntryScanCommand()]
     stdout: SplitParser { onRead: function(line) { hiddenEntryOutput.text += line + "\n" } }
     onStarted: hiddenEntryOutput.text = ""
     onExited: root.loadDesktopHiddenEntries(hiddenEntryOutput.text)
@@ -191,7 +216,7 @@ Item {
 
   Process {
     id: iconIndexScan
-    command: ["bash", "-lc", root.iconIndexScanCommand()]
+    command: ["bash", "-c", root.iconIndexScanCommand()]
     stdout: SplitParser { onRead: function(line) { root.indexIconLine(line) } }
     onStarted: root.pendingIconIndex = ({})
     // Swapping the property re-evaluates every iconSource() binding, so

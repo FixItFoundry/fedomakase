@@ -27,19 +27,19 @@
         "emptyText": "No indicators",
         "options": [
           {
-            "value": "TmuxAlert",
-            "label": "Tmux alert",
-            "description": "Tmux windows waiting for attention"
-          },
-          {
-            "value": "Dictation",
-            "label": "Dictation",
-            "description": "Voice typing status"
+            "value": "PasswordlessSudo",
+            "label": "Passwordless sudo",
+            "description": "Warning while passwordless root access is enabled"
           },
           {
             "value": "ScreenRecording",
             "label": "Screen recording",
             "description": "GPU screen recorder status"
+          },
+          {
+            "value": "RemoteSession",
+            "label": "Remote session",
+            "description": "Warning while someone is connected through gliff"
           },
           {
             "value": "Reminder",
@@ -69,6 +69,14 @@
         "label": "Always Show",
         "description": "Show inactive indicators without waiting for hover.",
         "defaultValue": false
+      }
+    ]
+  },
+  "omarchy": {
+    "clonePaths": [
+      {
+        "source": "../indicators",
+        "target": "indicators"
       }
     ]
   }
