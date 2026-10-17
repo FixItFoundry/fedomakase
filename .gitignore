@@ -1,4 +1,5 @@
 *.iso
+*.iso.sha256
 *.img
 /tmp/
 *.log

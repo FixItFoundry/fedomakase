@@ -12,6 +12,7 @@
 #   sudo bash build/build-netinstall-iso.sh /path/to/Fedora-Everything-netinst-x86_64-44-*.iso
 
 set -euo pipefail
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
@@ -34,7 +35,7 @@ for f in "$FEDORA_ISO" \
   fi
 done
 
-BUILD_DIR="/tmp/fedomakase_iso_build"
+BUILD_DIR="${FEDOMAKASE_BUILD_DIR:-/tmp/fedomakase_iso_build}"
 OUTPUT_ISO="$REPO_DIR/fedomakase-44-x86_64.iso"
 ISO_LABEL="Fedora-E-dvd-x86_64-44"
 COPR_URL="https://copr-be.cloud.fedoraproject.org/results/nett00n/hyprland/fedora-44-x86_64/"
@@ -43,6 +44,13 @@ COPR_WHELANH_URL="https://copr-be.cloud.fedoraproject.org/results/whelanh/omarch
 COPR_STARSHIP_URL="https://copr-be.cloud.fedoraproject.org/results/atim/starship/fedora-44-x86_64/"
 COPR_LAZYGIT_URL="https://copr-be.cloud.fedoraproject.org/results/boobaa/lazygit/fedora-44-x86_64/"
 
+COPR_URLS=(
+  "$COPR_URL"
+  "$COPR_GHOSTTY_URL"
+  "$COPR_WHELANH_URL"
+  "$COPR_STARSHIP_URL"
+  "$COPR_LAZYGIT_URL"
+)
 COPR_ARGS=(
   --repofrompath=copr-nett00n,"$COPR_URL" --repoid=copr-nett00n
   --repofrompath=copr-ghostty,"$COPR_GHOSTTY_URL" --repoid=copr-ghostty
@@ -57,6 +65,7 @@ while IFS= read -r copr_entry; do
   esac
   slug="copr-${copr_entry//\//-}"
   url="https://copr-be.cloud.fedoraproject.org/results/${copr_entry}/fedora-44-x86_64/"
+  COPR_URLS+=("$url")
   COPR_ARGS+=(--repofrompath="$slug,$url" --repoid="$slug")
 done < "$OMARCHY_DIR/install/omarchy-fedora-copr.repos"
 
@@ -105,12 +114,70 @@ if (( ${#MANIFEST_PKGS[@]} == 0 )); then
   exit 1
 fi
 
-mapfile -t AVAILABLE_PKGS < <(
-  dnf -q repoquery --arch=x86_64,noarch --qf '%{name}\n' \
-    --repoid=fedora --repoid=updates \
-    "${COPR_ARGS[@]}" \
-    "${MANIFEST_PKGS[@]}" 2>/dev/null | sort -u || true
-)
+if command -v dnf &>/dev/null; then
+  mapfile -t AVAILABLE_PKGS < <(
+    dnf -q repoquery --arch=x86_64,noarch --qf '%{name}\n' \
+      --repoid=fedora --repoid=updates \
+      "${COPR_ARGS[@]}" \
+      "${MANIFEST_PKGS[@]}" 2>/dev/null | sort -u || true
+  )
+else
+  mapfile -t AVAILABLE_PKGS < <(
+    python3 - "${COPR_URLS[@]}" << 'PYEOF' | sort -u
+import gzip, io, lzma, subprocess, sys, urllib.request, xml.etree.ElementTree as ET
+
+base_repos = [
+    "https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/",
+    "https://dl.fedoraproject.org/pub/fedora/linux/development/44/Everything/x86_64/os/",
+    "https://dl.fedoraproject.org/pub/fedora/linux/updates/44/Everything/x86_64/",
+] + list(sys.argv[1:])
+
+def fetch(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "fedomakase-iso-builder/1.0"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return r.read()
+
+names = set()
+for repo in base_repos:
+    repo = repo.rstrip("/") + "/"
+    try:
+        repomd = fetch(repo + "repodata/repomd.xml")
+    except Exception:
+        continue
+    root = ET.fromstring(repomd)
+    primary_href = None
+    for data in root.findall("{http://linux.duke.edu/metadata/repo}data"):
+        if data.attrib.get("type") == "primary":
+            loc = data.find("{http://linux.duke.edu/metadata/repo}location")
+            if loc is not None:
+                primary_href = loc.attrib.get("href")
+                break
+    if not primary_href:
+        continue
+    try:
+        raw = fetch(repo + primary_href)
+        if primary_href.endswith(".zst"):
+            xml_bytes = subprocess.check_output(["zstd", "-dc"], input=raw)
+        elif primary_href.endswith(".xz"):
+            xml_bytes = lzma.decompress(raw)
+        elif primary_href.endswith(".gz"):
+            xml_bytes = gzip.decompress(raw)
+        else:
+            xml_bytes = raw
+        for event, elem in ET.iterparse(io.BytesIO(xml_bytes), events=("end",)):
+            if elem.tag == "{http://linux.duke.edu/metadata/common}package":
+                n = elem.find("{http://linux.duke.edu/metadata/common}name")
+                if n is not None and n.text:
+                    names.add(n.text)
+                elem.clear()
+    except Exception as e:
+        sys.stderr.write(f"WARN: failed reading {repo}{primary_href}: {e}\n")
+
+for n in sorted(names):
+    print(n)
+PYEOF
+  )
+fi
 
 declare -A AVAILABLE_SET=()
 for pkg in "${AVAILABLE_PKGS[@]}"; do
@@ -213,8 +280,9 @@ xorriso -as mkisofs \
   -append_partition 2 0xef "$BUILD_DIR/efiboot.img" \
   $([[ -f "$BUILD_DIR/macboot.img" ]] && echo "-append_partition 3 0x00 $BUILD_DIR/macboot.img") \
   -appended_part_as_gpt \
-  -o "$OUTPUT_ISO" \
+  -o "$BUILD_DIR/fedomakase-44-x86_64.iso" \
   "$BUILD_DIR/extracted"
 
+cp -f "$BUILD_DIR/fedomakase-44-x86_64.iso" "$OUTPUT_ISO"
 rm -rf "$BUILD_DIR" "$OMARCHY_DIR/installer/gum"
 echo -e "\e[32m=== Build Complete: $OUTPUT_ISO ===\e[0m"

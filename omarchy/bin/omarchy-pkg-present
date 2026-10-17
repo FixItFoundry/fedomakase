@@ -24,6 +24,18 @@ pkg_installed() {
     libfprint-git) rpm -q libfprint &>/dev/null && return 0 ;;
     voxtype-bin) rpm -q voxtype &>/dev/null && return 0 ;;
     voxtype) rpm -q voxtype-bin &>/dev/null && return 0 ;;
+    python-terminaltexteffects) rpm -q ttfx &>/dev/null && return 0 ;;
+    libpulse) rpm -q pulseaudio-libs &>/dev/null && return 0 ;;
+    vulkan-intel | vulkan-radeon | vulkan-freedreno) rpm -q mesa-vulkan-drivers &>/dev/null && return 0 ;;
+    lib32-vulkan-intel | lib32-vulkan-radeon) rpm -q mesa-vulkan-drivers.i686 &>/dev/null && return 0 ;;
+    sof-firmware) rpm -q alsa-sof-firmware &>/dev/null && return 0 ;;
+    pipewire-libcamera) rpm -q pipewire-plugin-libcamera &>/dev/null && return 0 ;;
+    pipewire-pulse) rpm -q pipewire-pulseaudio &>/dev/null && return 0 ;;
+    pipewire-jack) rpm -q pipewire-jack-audio-connection-kit &>/dev/null && return 0 ;;
+    gst-plugin-pipewire) rpm -q pipewire-gstreamer &>/dev/null && return 0 ;;
+    pam-u2f) rpm -q pam_u2f &>/dev/null && return 0 ;;
+    broadcom-wl-dkms) rpm -q broadcom-wl &>/dev/null && return 0 ;;
+    v4l2loopback-dkms) rpm -q v4l2loopback &>/dev/null && return 0 ;;
     obsidian) flatpak info md.obsidian.Obsidian &>/dev/null && return 0 ;;
     *.*.*) flatpak info -- "$pkg" &>/dev/null && return 0 ;;
   esac

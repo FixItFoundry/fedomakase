@@ -3,8 +3,9 @@
 # Runs inside Anaconda's %pre on TTY3. Uses Gum to gather every install choice
 # and writes /tmp/fedomakase-part.cfg — an Anaconda include file consumed by
 # omarchy-ks.cfg via %include. Also writes /tmp/fedomakase-luks-pass when
-# encryption is selected (used once by systemd-cryptenroll in %post) and
-# /tmp/fedomakase-input-method for CJK/XKB layout seeding.
+# encryption is selected (used once by systemd-cryptenroll in %post),
+# /tmp/fedomakase-input-method for CJK/XKB layout seeding, and
+# /tmp/fedomakase-git-identity for omarchy-provision-user git setup.
 
 set -euo pipefail
 
@@ -30,7 +31,33 @@ wait_for_stable_terminal() {
   done
 }
 
+# Scale console font on high-DPI panels (e.g., 2.8K OLED) to ~48 rows while keeping >=82 columns
+scale_console_font() {
+  [[ $(tty 2>/dev/null) == /dev/tty* ]] || return 0
+  local target_rows=48 min_width=81
+  local fonts=("default8x16" "sun12x22" "latarcyrheb-sun32")
+  local best="" best_diff=999999 name rows cols diff
+  for name in "${fonts[@]}"; do
+    setfont "$name" 2>/dev/null || continue
+    read -r rows cols < <(stty size </dev/tty 2>/dev/null || printf '0 0\n')
+    [[ $rows =~ ^[0-9]+$ && $cols =~ ^[0-9]+$ ]] || continue
+    (( cols > min_width )) || continue
+    diff=$(( rows > target_rows ? rows - target_rows : target_rows - rows ))
+    (( diff < best_diff )) && { best_diff=$diff; best="$name"; }
+  done
+  setfont "${best:-default8x16}" 2>/dev/null || true
+}
+
+# Apply upstream Omarchy Tokyo Night VT color palette
+set_tokyo_night_colors() {
+  [[ $(tty 2>/dev/null) == /dev/tty* ]] || return 0
+  printf '\e]P01a1b26\e]P1f7768e\e]P29ece6a\e]P3e0af68\e]P47aa2f7\e]P5bb9af7\e]P67dcfff\e]P7a9b1d6'
+  printf '\e]P8414868\e]P9f7768e\e]PA9ece6a\e]PBe0af68\e]PC7aa2f7\e]PDbb9af7\e]PE7dcfff\e]PFc0caf5'
+}
+
 wait_for_stable_terminal
+scale_console_font
+set_tokyo_night_colors
 
 COLUMNS=$(tput cols 2>/dev/null || stty size 2>/dev/null | awk '{print $2}' || echo 80)
 [[ -z "$COLUMNS" || ! "$COLUMNS" =~ ^[0-9]+$ || "$COLUMNS" -le 0 ]] && COLUMNS=80
@@ -38,7 +65,8 @@ COLUMNS=$(tput cols 2>/dev/null || stty size 2>/dev/null | awk '{print $2}' || e
 PART_CFG="/tmp/fedomakase-part.cfg"
 LUKS_PASS_FILE="/tmp/fedomakase-luks-pass"
 INPUT_METHOD_FILE="/tmp/fedomakase-input-method"
-rm -f "$PART_CFG" "$LUKS_PASS_FILE" "$INPUT_METHOD_FILE"
+GIT_IDENTITY_FILE="/tmp/fedomakase-git-identity"
+rm -f "$PART_CFG" "$LUKS_PASS_FILE" "$INPUT_METHOD_FILE" "$GIT_IDENTITY_FILE"
 
 # --- Display Helpers (ANSI-based, reliable on TTY) ---
 print_center() {
@@ -101,7 +129,7 @@ cat << 'BANNER' | print_art
 BANNER
 
 echo ""
-print_center "Fedora Edition - Native Installer"
+print_center "Fedora Edition (Quattro) - Native Installer"
 echo ""
 print_bold 74 "Welcome to the Fedomakase Interactive Installer!"
 echo ""
@@ -181,16 +209,57 @@ XKB_LAYOUT="${XKB_LAYOUT:-}"
 # Load selected keymap on live TTY immediately so passphrases/passwords match
 loadkeys "$KEYMAP" 2>/dev/null || true
 
-# 2. Disk Selection
+# 2. Target Disk & Partitioning Mode Selection (Clean Install vs Dual-Boot Free Space vs Disk Clone Utility)
 echo ""
-print_bold 111 "2. Target Disk Selection"
-print_color 204 "WARNING: All data on the selected disk will be completely erased!"
+print_bold 111 "2. Target Disk & Partitioning Mode"
 
-DISKS=$(lsblk -dno NAME,SIZE,MODEL,TYPE | awk '$1 !~ /^(loop|zram|sr|fd)/ && $NF == "disk" { model=""; for(i=3;i<NF;i++) model=model $i " "; gsub(/ $/, "", model); print "/dev/"$1" ("$2" "model")" }')
+while true; do
+  DISKS=$(lsblk -dno NAME,SIZE,MODEL,TYPE | awk '$1 !~ /^(loop|zram|sr|fd)/ && $NF == "disk" { model=""; for(i=3;i<NF;i++) model=model $i " "; gsub(/ $/, "", model); print "/dev/"$1" ("$2" "model")" }')
 
-if [[ -z "$DISKS" ]]; then
-  print_color 204 "Error: No suitable installation disks found!"
-  exit 1
+  if [[ -z "$DISKS" ]]; then
+    print_color 204 "Error: No suitable installation disks found!"
+    exit 1
+  fi
+
+  PART_MODE_CHOICE=$(gum choose --header "Select installation partitioning mode:" \
+    "Use Unallocated Free Space (Dual-Boot — keep existing OS partitions)" \
+    "Erase Entire Disk (Clean Install — wipe all partitions on selected drive)" \
+    "Disk Clone Utility (Block-clone smaller drive to larger NVMe + expand GPT)") || true
+
+  if [[ "$PART_MODE_CHOICE" == Disk\ Clone\ Utility* ]]; then
+    mapfile -t CLONE_DISKS <<< "$DISKS"
+    SRC_DISK_STR=$(gum choose --header "Select SOURCE drive to clone FROM (e.g. 512GB internal NVMe):" "${CLONE_DISKS[@]}") || true
+    DST_DISK_STR=$(gum choose --header "Select DESTINATION drive to clone TO (e.g. 1TB USB-C NVMe):" "${CLONE_DISKS[@]}") || true
+    SRC_DISK=$(echo "${SRC_DISK_STR:-}" | awk '{print $1}')
+    DST_DISK=$(echo "${DST_DISK_STR:-}" | awk '{print $1}')
+    if [[ -n "$SRC_DISK" && -n "$DST_DISK" && "$SRC_DISK" != "$DST_DISK" ]]; then
+      if gum confirm "Clone $SRC_DISK -> $DST_DISK now and relocate backup GPT table with sgdisk -e?"; then
+        echo ""
+        print_bold 111 "Cloning $SRC_DISK to $DST_DISK (bs=64M)..."
+        dd if="$SRC_DISK" of="$DST_DISK" bs=64M status=progress conv=fsync
+        sgdisk -e "$DST_DISK" || true
+        partprobe "$DST_DISK" 2>/dev/null || true
+        print_color 108 "Clone and GPT tail relocation complete! Power off to swap physical drives, or continue."
+        if gum confirm "Power off now to swap physical NVMe drives?"; then
+          poweroff -f
+          exit 0
+        fi
+      fi
+    else
+      print_color 204 "Source and destination drives must be valid and distinct."
+    fi
+    continue
+  fi
+  break
+done
+
+[[ -z "${PART_MODE_CHOICE:-}" ]] && PART_MODE_CHOICE="Erase Entire Disk (Clean Install — wipe all partitions on selected drive)"
+DUAL_BOOT_FREE_SPACE=false
+if [[ "$PART_MODE_CHOICE" == Use\ Unallocated\ Free\ Space* ]]; then
+  DUAL_BOOT_FREE_SPACE=true
+  print_color 108 "Dual-Boot Mode: Existing partitions on the target disk will be preserved."
+else
+  print_color 204 "WARNING: All data on the selected disk will be completely erased!"
 fi
 
 mapfile -t DISK_ARRAY <<< "$DISKS"
@@ -214,7 +283,7 @@ print_bold 111 "3. Drive Encryption (LUKS2)"
 ENCRYPT_DRIVE=false
 LUKS_PASSPHRASE=""
 
-if gum confirm "Would you like to encrypt your drive with LUKS2?"; then
+if gum confirm "Would you like to encrypt your Fedomakase Btrfs volume with LUKS2?"; then
   while true; do
     LUKS_PASSPHRASE=$(gum input --password --header "LUKS encryption passphrase:") || true
     LUKS_CONFIRM=$(gum input --password --header "Confirm LUKS passphrase:") || true
@@ -232,12 +301,15 @@ if gum confirm "Would you like to encrypt your drive with LUKS2?"; then
   done
 fi
 
-# 4. User Account, Hostname & Timezone Setup
+# 4. User Account, Git Identity, Hostname & Timezone Setup
 echo ""
 print_bold 111 "4. User Account & System Identity"
 
-REAL_NAME=$(gum input --header "Full Name:" --placeholder "e.g. Omarchy User" --value "Omarchy User") || true
+REAL_NAME=$(gum input --header "Full Name (used for account & git):" --placeholder "e.g. Omarchy User (hit return to skip)" --value "") || true
 REAL_NAME=${REAL_NAME//\"/}
+
+USER_EMAIL=$(gum input --header "Email Address (used for git config):" --placeholder "e.g. you@example.com (hit return to skip)" --value "") || true
+USER_EMAIL=${USER_EMAIL//\"/}
 
 RESERVED_USERNAMES='^(root|bin|daemon|mail|ftp|http|nobody|dbus|systemd-coredump|systemd-network|systemd-oom|systemd-journal-remote|systemd-resolve|systemd-timesync|tss|uuidd|alpm|git|avahi|cups|cups-browsed|lp|_talkd|polkitd|rtkit|qemu|brltty|gluster|rpc|libvirt-qemu|pcscd|nvidia-persistenced|sddm)$'
 USERNAME=""
@@ -323,29 +395,41 @@ TIMEZONE=$(printf '%s\n' "$TIMEZONE_LIST" | gum filter --height 10 --header "Sel
 [[ -z "$TIMEZONE" ]] && TIMEZONE="UTC"
 
 # 5. Confirmation Summary
+PART_SUMMARY="Erase Entire Disk (Clean Install)"
+[[ $DUAL_BOOT_FREE_SPACE == true ]] && PART_SUMMARY="Use Free Space (Dual-Boot — preserve existing partitions)"
+
 echo ""
 gum style --border normal --margin "1 2" --padding "1 2" --border-foreground 74 \
   "Installation Summary:" \
   "  Keyboard Layout:   $KEYBOARD_LABEL ($KEYMAP)" \
   "  Target Drive:      $TARGET_DISK" \
+  "  Partition Mode:    $PART_SUMMARY" \
   "  LUKS Encrypted:    $ENCRYPT_DRIVE" \
-  "  User Account:      $USERNAME ($REAL_NAME)" \
+  "  User Account:      $USERNAME (${REAL_NAME:-$USERNAME})" \
+  "  Git Email:         ${USER_EMAIL:-<not set>}" \
   "  Hostname:          $HOSTNAME" \
   "  Timezone:          $TIMEZONE" \
-  "  Desktop:           Hyprland + SDDM + Omarchy Theme"
+  "  Desktop:           Hyprland + SDDM + Omarchy Quattro"
 
-if ! gum confirm "Begin installation and overwrite $TARGET_DISK now?"; then
+CONFIRM_PROMPT="Begin installation on $TARGET_DISK ($PART_SUMMARY)?"
+if ! gum confirm "$CONFIRM_PROMPT"; then
   print_color 204 "Installation cancelled."
   exit 1
 fi
 
 # 6. Generate Anaconda partitioning & identity include consumed by omarchy-ks.cfg
+GECOS_NAME="${REAL_NAME:-$USERNAME}"
 {
   echo "keyboard --vckeymap=${KEYMAP}"
   echo "timezone ${TIMEZONE} --utc"
   echo "network --bootproto=dhcp --device=link --activate --hostname=${HOSTNAME}"
   echo "ignoredisk --only-use=${TARGET_DISK_NAME}"
-  echo "clearpart --all --initlabel --drives=${TARGET_DISK_NAME}"
+  if [[ $DUAL_BOOT_FREE_SPACE == true ]]; then
+    echo "clearpart --none --drives=${TARGET_DISK_NAME}"
+  else
+    echo "zerombr"
+    echo "clearpart --all --initlabel --drives=${TARGET_DISK_NAME}"
+  fi
   if [[ $ENCRYPT_DRIVE == true ]]; then
     echo "autopart --type=btrfs --encrypted --luks-version=luks2 --passphrase=\"${LUKS_PASSPHRASE}\""
     printf '%s' "$LUKS_PASSPHRASE" > "$LUKS_PASS_FILE"
@@ -353,12 +437,15 @@ fi
   else
     echo "autopart --type=btrfs"
   fi
-  echo "user --name=${USERNAME} --gecos=\"${REAL_NAME}\" --groups=wheel --password=${USER_HASH}"
+  echo "user --name=${USERNAME} --gecos=\"${GECOS_NAME}\" --groups=wheel --password=${USER_HASH}"
 } > "$PART_CFG"
 chmod 600 "$PART_CFG"
 
 printf 'INPUT_METHOD=%s\nXKB_LAYOUT=%s\n' "$INPUT_METHOD" "$XKB_LAYOUT" > "$INPUT_METHOD_FILE"
 chmod 644 "$INPUT_METHOD_FILE"
+
+printf 'OMARCHY_USER_NAME=%q\nOMARCHY_USER_EMAIL=%q\n' "$REAL_NAME" "$USER_EMAIL" > "$GIT_IDENTITY_FILE"
+chmod 600 "$GIT_IDENTITY_FILE"
 
 unset LUKS_PASSPHRASE USER_HASH
 

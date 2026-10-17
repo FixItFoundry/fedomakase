@@ -44,5 +44,8 @@ brycensranch/gpu-screen-recorder-git
 # Verified building for fedora-44 x86_64.
 lecris/moonlight
 
+# keyd — Key remapping daemon for Googlebook / Chromebook top-row action keys.
+alternateved/keyd
+
 # Flathub Repository URL for Desktop Flatpak Apps
 FLATHUB_URL=https://dl.flathub.org/repo/flathub.flatpakrepo

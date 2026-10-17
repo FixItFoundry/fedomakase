@@ -22,8 +22,19 @@ map_pkg() {
     wine-staging) echo wine ;;
     python-protobuf) echo python3-protobuf ;;
     python-gpgme) echo python3-gpg ;;
+    python-terminaltexteffects) echo ttfx ;;
+    libpulse) echo pulseaudio-libs ;;
+    vulkan-intel | vulkan-radeon | vulkan-freedreno) echo mesa-vulkan-drivers ;;
     lib32-vulkan-intel | lib32-vulkan-radeon) echo mesa-vulkan-drivers.i686 ;;
     lib32-nvidia-utils | lib32-nvidia-580xx-utils) echo xorg-x11-drv-nvidia-libs.i686 ;;
+    sof-firmware) echo alsa-sof-firmware ;;
+    pipewire-libcamera) echo pipewire-plugin-libcamera ;;
+    pipewire-pulse) echo pipewire-pulseaudio ;;
+    pipewire-jack) echo pipewire-jack-audio-connection-kit ;;
+    gst-plugin-pipewire) echo pipewire-gstreamer ;;
+    pam-u2f) echo pam_u2f ;;
+    broadcom-wl-dkms) echo broadcom-wl ;;
+    v4l2loopback-dkms) echo v4l2loopback ;;
     *) echo "$1" ;;
   esac
 }
