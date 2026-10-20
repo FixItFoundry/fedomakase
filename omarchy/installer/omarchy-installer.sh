@@ -13,7 +13,29 @@
 set -uo pipefail
 
 export TERM="${TERM:-linux}"
+export LANG="${LANG:-C.UTF-8}"
+export LC_ALL="${LC_ALL:-C.UTF-8}"
+
+# In Anaconda %pre, the parent shell runs inside tmux on /dev/pts/0, so
+# `exec </dev/tty3 >/dev/tty3 2>&1` leaves `/dev/tty` pointing at `/dev/pts/0`.
+# Detach into a new session with `/dev/tty3` as the true controlling terminal
+# so gum, ttfx, stty, and `read </dev/tty` all operate on `/dev/tty3`.
+if [[ -z "${OMARCHY_CTTY_ATTACHED:-}" && -c /dev/tty3 ]] && command -v python3 &>/dev/null; then
+  export OMARCHY_CTTY_ATTACHED=1
+  chvt 3 2>/dev/null || true
+  exec python3 -c '
+import fcntl, os, sys, termios
+os.setsid()
+fd = os.open("/dev/tty3", os.O_RDWR)
+fcntl.ioctl(fd, termios.TIOCSCTTY, 1)
+os.dup2(fd, 0); os.dup2(fd, 1); os.dup2(fd, 2)
+if fd > 2: os.close(fd)
+os.execvp(sys.argv[1], sys.argv[1:])
+' bash "$0" "$@"
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="$SCRIPT_DIR:$PATH"
 OMARCHY_PATH="${OMARCHY_PATH:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 LOGO_PATH="$OMARCHY_PATH/logo.txt"
 
@@ -39,19 +61,39 @@ export GUM_CONFIRM_UNSELECTED_BACKGROUND="0"
 
 LOGO_WIDTH=0
 if [[ -r "$LOGO_PATH" ]]; then
-  LOGO_WIDTH=$(awk '{ if (length > max) max = length } END { print max+0 }' "$LOGO_PATH")
+  LOGO_WIDTH=$(python3 -c 'import sys; print(max(len(l.rstrip("\r\n")) for l in open(sys.argv[1], encoding="utf-8")))' "$LOGO_PATH" 2>/dev/null || echo 65)
 fi
-(( LOGO_WIDTH > 0 )) || LOGO_WIDTH=60
+(( LOGO_WIDTH > 0 )) || LOGO_WIDTH=65
 
-# Scale console font on high-DPI panels to ~48 rows while keeping >=82 columns
+clear() {
+  printf '\033[H\033[2J'
+}
+
+# Read (rows, cols) from /dev/tty even in Fedora 44 Anaconda stage2 where `stty` is absent
+tty_size() {
+  if command -v stty &>/dev/null; then
+    stty size </dev/tty 2>/dev/null && return 0
+  fi
+  python3 -c 'import os; s=os.get_terminal_size(0); print(f"{s.lines} {s.columns}")' </dev/tty 2>/dev/null || printf '%s %s\n' "${LINES:-24}" "${COLUMNS:-80}"
+}
+
+tty_sane() {
+  if command -v stty &>/dev/null; then
+    stty sane </dev/tty 2>/dev/null && return 0
+  fi
+  python3 -c 'import termios; a=termios.tcgetattr(0); a[3]|=(termios.ECHO|termios.ICANON|termios.ISIG); termios.tcsetattr(0,termios.TCSANOW,a)' </dev/tty 2>/dev/null || true
+}
+
+# Scale console font on high-DPI panels to ~48 rows while keeping enough columns for the logo
 scale_console_font() {
   [[ $(tty 2>/dev/null) == /dev/tty* ]] || return 0
-  local target_rows=48 min_width=81
+  local target_rows=48 min_width=$((LOGO_WIDTH + 4))
+  (( min_width < 81 )) && min_width=81
   local fonts=("default8x16" "sun12x22" "latarcyrheb-sun32")
   local best="" best_diff=999999 name rows cols diff
   for name in "${fonts[@]}"; do
     setfont "$name" 2>/dev/null || continue
-    read -r rows cols < <(stty size </dev/tty 2>/dev/null || printf '0 0\n')
+    read -r rows cols < <(tty_size)
     [[ $rows =~ ^[0-9]+$ && $cols =~ ^[0-9]+$ ]] || continue
     (( cols > min_width )) || continue
     diff=$(( rows > target_rows ? rows - target_rows : target_rows - rows ))
@@ -69,7 +111,7 @@ set_tokyo_night_colors() {
 }
 
 measure_terminal() {
-  TERM_WIDTH=$(stty size 2>/dev/null </dev/tty | awk '{print $2}')
+  TERM_WIDTH=$(tty_size | awk '{print $2}')
   [[ ${TERM_WIDTH:-} =~ ^[0-9]+$ ]] && (( TERM_WIDTH > 0 )) || TERM_WIDTH=${COLUMNS:-80}
 
   PADDING_LEFT=$(((TERM_WIDTH - LOGO_WIDTH) / 2))
@@ -88,7 +130,7 @@ measure_terminal() {
 wait_for_stable_terminal() {
   local width last="" stable=0 waited=0
   while (( waited < 5000 )); do
-    width=$(stty size 2>/dev/null </dev/tty | awk '{print $2}')
+    width=$(tty_size | awk '{print $2}')
     [[ $width =~ ^[0-9]+$ ]] || width=0
     if [[ $width == "$last" ]] && (( width >= LOGO_WIDTH )); then
       (( ++stable >= 3 )) && break
@@ -115,7 +157,7 @@ greeter() {
   local rows logo_h content_h top cols logo_row tagline_row hint_row
   local tagline hint tpad hpad anim=""
   cols=$TERM_WIDTH
-  rows=$(stty size 2>/dev/null </dev/tty | awk '{print $1}')
+  rows=$(tty_size | awk '{print $1}')
   [[ $rows =~ ^[0-9]+$ ]] || rows=${LINES:-24}
   logo_h=$(wc -l <"$LOGO_PATH" 2>/dev/null || echo 6)
 
@@ -163,7 +205,7 @@ greeter() {
     kill "$anim" 2>/dev/null || true
     wait "$anim" 2>/dev/null || true
   fi
-  stty sane </dev/tty 2>/dev/null || true
+  tty_sane
   printf '\033[0m\033[H\033[2J\033[?25h'
 }
 
@@ -373,7 +415,13 @@ open_partition_tool() {
   gum confirm --affirmative "Open cfdisk" --negative "Back" "Open partition tool for $disk?" || return 0
 
   clear
-  cfdisk "$disk" || true
+  if command -v cfdisk &>/dev/null; then
+    cfdisk "$disk" || true
+  elif command -v fdisk &>/dev/null; then
+    fdisk "$disk" || true
+  else
+    parted "$disk" || true
+  fi
   partprobe "$disk" 2>/dev/null || true
   sync
   sleep 1

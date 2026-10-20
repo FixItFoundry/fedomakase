@@ -105,15 +105,22 @@ chmod 0440 /etc/sudoers.d/omarchy-grub-bootmenu
 
 # --- WEBAPP MANIFESTS ---
 echo "[4/11] Webapp manifests..."
+mkdir -p /var/lib/flatpak/exports/share/applications /var/lib/flatpak/exports/share/icons \
+         /etc/skel/.local/share/flatpak/exports/share/applications /etc/skel/.local/share/flatpak/exports/share/icons
+[ -f /etc/yum.repos.d/google-chrome.repo ] && sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/google-chrome.repo || true
+[ -f /etc/yum.repos.d/rpmfusion-nonfree-steam.repo ] && sed -i '0,/enabled=0/s/enabled=0/enabled=1/' /etc/yum.repos.d/rpmfusion-nonfree-steam.repo || true
+[ -f /etc/yum.repos.d/rpmfusion-nonfree-nvidia-driver.repo ] && sed -i '0,/enabled=0/s/enabled=0/enabled=1/' /etc/yum.repos.d/rpmfusion-nonfree-nvidia-driver.repo || true
 if [[ -d "$OMARCHY/applications" ]]; then
   for user_dir in /home/*; do
     if [[ -d "$user_dir" ]]; then
       user_name=$(basename "$user_dir")
       if [[ "$user_name" != "lost+found" ]]; then
-        mkdir -p "$user_dir/.local/share/applications"
+        mkdir -p "$user_dir/.local/share/applications" \
+                 "$user_dir/.local/share/flatpak/exports/share/applications" \
+                 "$user_dir/.local/share/flatpak/exports/share/icons"
         cp -f "$OMARCHY/applications/"*.desktop "$user_dir/.local/share/applications/" 2>/dev/null || true
         cp -rf "$OMARCHY/applications/icons" "$user_dir/.local/share/icons/" 2>/dev/null || true
-        chown -R "$user_name:$user_name" "$user_dir/.local/share/applications" 2>/dev/null || true
+        chown -R "$user_name:$user_name" "$user_dir/.local/share/applications" "$user_dir/.local/share/flatpak" 2>/dev/null || true
       fi
     fi
   done

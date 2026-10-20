@@ -82,7 +82,7 @@ scan_dir() {
     if is_hidden_desktop_file "$file"; then
       printf '%s\n' "$id"
     fi
-  done < <(find "$dir" -type f -name '*.desktop' -print0 2>/dev/null | sort -z)
+  done < <(find -L "$dir" -type f -name '*.desktop' -print0 2>/dev/null | sort -z)
 }
 
 scan_dir "$HOME/.local/share/applications"

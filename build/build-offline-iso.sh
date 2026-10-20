@@ -83,11 +83,11 @@ fi
 
 # 4. Download static gum + Nerd Font for the payload (fail loud)
 echo "[4/7] Downloading gum binary and Nerd Font..."
-rm -rf /tmp/gum_0.14.3_Linux_x86_64 /tmp/gum.tar.gz
-wget -qO /tmp/gum.tar.gz "https://github.com/charmbracelet/gum/releases/download/v0.14.3/gum_0.14.3_Linux_x86_64.tar.gz"
+rm -rf /tmp/gum_0.17.0_Linux_x86_64 /tmp/gum.tar.gz
+wget -qO /tmp/gum.tar.gz "https://github.com/charmbracelet/gum/releases/download/v0.17.0/gum_0.17.0_Linux_x86_64.tar.gz"
 tar -xf /tmp/gum.tar.gz -C /tmp
-[[ -x /tmp/gum_0.14.3_Linux_x86_64/gum ]] || { echo "Error: gum binary missing after download." >&2; exit 1; }
-cp /tmp/gum_0.14.3_Linux_x86_64/gum "$OMARCHY_DIR/installer/gum"
+[[ -x /tmp/gum_0.17.0_Linux_x86_64/gum ]] || { echo "Error: gum binary missing after download." >&2; exit 1; }
+cp /tmp/gum_0.17.0_Linux_x86_64/gum "$OMARCHY_DIR/installer/gum"
 chmod +x "$OMARCHY_DIR/installer/gum"
 
 NF_TMP="/tmp/fedomakase-nf/JetBrainsMono-NF"

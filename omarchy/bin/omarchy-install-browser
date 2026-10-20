@@ -55,8 +55,8 @@ chromium)
   announce_browser_installed "Chromium"
   ;;
 chrome)
-  echo "Installing Chrome (Flatpak)..."
-  flatpak install -y flathub com.google.Chrome || exit 1
+  echo "Installing Chrome..."
+  omarchy-pkg-add google-chrome || exit 1
 
   setup_chromium_policy_directory /etc/opt/chrome/policies/managed
   copy_chromium_flags ~/.config/chrome-flags.conf

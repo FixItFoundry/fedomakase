@@ -79,7 +79,12 @@ mkdir -p "$BUILD_DIR/extracted"
 
 # 2. Extract base Fedora ISO
 echo "[2/7] Extracting base Fedora ISO..."
-bsdtar -C "$BUILD_DIR/extracted" -xf "$FEDORA_ISO"
+if command -v bsdtar &>/dev/null; then
+  bsdtar -C "$BUILD_DIR/extracted" -xf "$FEDORA_ISO"
+else
+  xorriso -osirrox on -indev "$FEDORA_ISO" -extract / "$BUILD_DIR/extracted" 2>/dev/null
+fi
+chmod -R u+w "$BUILD_DIR/extracted"
 
 # 3. Extract EFI and MAC boot partitions
 echo "[3/7] Restoring UEFI bootloader partition..."
@@ -98,14 +103,47 @@ if [[ -n "$MAC_SECTOR" && -n "$MAC_SIZE" ]]; then
   dd if="$FEDORA_ISO" of="$BUILD_DIR/macboot.img" skip="$MAC_SECTOR" count="$MAC_SIZE" bs=512 status=none
 fi
 
-# 4. Download static gum for the installer UI (fail loud: %pre cannot run without it)
-echo "[4/7] Downloading static gum binary..."
-rm -rf /tmp/gum_0.14.3_Linux_x86_64 /tmp/gum.tar.gz
-wget -qO /tmp/gum.tar.gz "https://github.com/charmbracelet/gum/releases/download/v0.14.3/gum_0.14.3_Linux_x86_64.tar.gz"
-tar -xf /tmp/gum.tar.gz -C /tmp
-[[ -x /tmp/gum_0.14.3_Linux_x86_64/gum ]] || { echo "Error: gum binary missing after download." >&2; exit 1; }
-cp /tmp/gum_0.14.3_Linux_x86_64/gum "$OMARCHY_DIR/installer/gum"
+# 4. Download static gum + ttfx for the installer UI (fail loud on gum: %pre cannot run without it)
+echo "[4/7] Downloading static gum and ttfx binaries..."
+rm -rf "$BUILD_DIR/gum_0.17.0_Linux_x86_64" "$BUILD_DIR/gum.tar.gz"
+wget -qO "$BUILD_DIR/gum.tar.gz" "https://github.com/charmbracelet/gum/releases/download/v0.17.0/gum_0.17.0_Linux_x86_64.tar.gz"
+tar -xf "$BUILD_DIR/gum.tar.gz" -C "$BUILD_DIR"
+[[ -x "$BUILD_DIR/gum_0.17.0_Linux_x86_64/gum" ]] || { echo "Error: gum binary missing after download." >&2; exit 1; }
+cp "$BUILD_DIR/gum_0.17.0_Linux_x86_64/gum" "$OMARCHY_DIR/installer/gum"
 chmod +x "$OMARCHY_DIR/installer/gum"
+
+TTFX_RPM_URL=$(python3 - "$COPR_WHELANH_URL" << 'PY' 2>/dev/null | sort -V | tail -n 1 || true
+import gzip, io, subprocess, sys, urllib.request, xml.etree.ElementTree as ET
+base = sys.argv[1].rstrip("/") + "/"
+repomd = ET.fromstring(urllib.request.urlopen(base + "repodata/repomd.xml", timeout=30).read())
+for d in repomd.findall("{http://linux.duke.edu/metadata/repo}data"):
+    if d.attrib.get("type") == "primary":
+        href = d.find("{http://linux.duke.edu/metadata/repo}location").attrib["href"]
+        raw = urllib.request.urlopen(base + href, timeout=30).read()
+        xml_b = gzip.decompress(raw) if href.endswith(".gz") else subprocess.check_output(["zstd", "-dc"], input=raw)
+        for _, el in ET.iterparse(io.BytesIO(xml_b), events=("end",)):
+            if el.tag == "{http://linux.duke.edu/metadata/common}package":
+                n = el.find("{http://linux.duke.edu/metadata/common}name")
+                a = el.find("{http://linux.duke.edu/metadata/common}arch")
+                l = el.find("{http://linux.duke.edu/metadata/common}location")
+                if n is not None and n.text == "ttfx" and a is not None and a.text == "x86_64":
+                    print(base + l.attrib["href"])
+PY
+)
+if [[ -n "$TTFX_RPM_URL" ]]; then
+  mkdir -p "$BUILD_DIR/ttfx_extract"
+  if wget -qO "$BUILD_DIR/ttfx.rpm" "$TTFX_RPM_URL"; then
+    if command -v bsdtar &>/dev/null; then
+      bsdtar -C "$BUILD_DIR/ttfx_extract" -xf "$BUILD_DIR/ttfx.rpm" 2>/dev/null || true
+    elif command -v rpm2cpio &>/dev/null; then
+      (cd "$BUILD_DIR/ttfx_extract" && rpm2cpio "$BUILD_DIR/ttfx.rpm" | cpio -idm --quiet 2>/dev/null || true)
+    fi
+    if [[ -f "$BUILD_DIR/ttfx_extract/usr/bin/ttfx" ]]; then
+      cp -f "$BUILD_DIR/ttfx_extract/usr/bin/ttfx" "$OMARCHY_DIR/installer/ttfx"
+      chmod +x "$OMARCHY_DIR/installer/ttfx"
+    fi
+  fi
+fi
 
 # 5. Generate %packages block from the manifest, resolved against live repos
 echo "[5/7] Resolving manifest packages against fedora/updates/COPR metadata..."
@@ -286,5 +324,5 @@ xorriso -as mkisofs \
   "$BUILD_DIR/extracted"
 
 cp -f "$BUILD_DIR/fedomakase-44-x86_64.iso" "$OUTPUT_ISO"
-rm -rf "$BUILD_DIR" "$OMARCHY_DIR/installer/gum"
+rm -rf "$BUILD_DIR" "$OMARCHY_DIR/installer/gum" "$OMARCHY_DIR/installer/ttfx"
 echo -e "\e[32m=== Build Complete: $OUTPUT_ISO ===\e[0m"
