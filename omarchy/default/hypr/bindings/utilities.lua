@@ -32,6 +32,9 @@ o.bind_toggle("SUPER + CTRL + I", "Toggle locking on idle", "idle")
 o.bind_toggle("SUPER + CTRL + N", "Toggle nightlight", "nightlight")
 o.bind("SUPER + CTRL + Delete", "Toggle laptop display", "omarchy-hyprland-monitor-internal toggle")
 o.bind("SUPER + CTRL + ALT + Delete", "Toggle laptop display mirroring", "omarchy-hyprland-monitor-internal-mirror toggle")
+-- A 2-in-1 whose controller never reports the fold still needs a way into
+-- and out of tablet mode.
+o.bind("SUPER + SHIFT + T", "2-in-1 mode", "omarchy-toggle-2in1 toggle")
 o.bind("switch:on:Lid Switch", nil, "omarchy-system-lid-close", { locked = true })
 o.bind("switch:off:Lid Switch", nil, "omarchy-hyprland-monitor-clamshell", { locked = true })
 -- Apple Silicon reports its lid through the SMC, under its own switch name.

@@ -44,6 +44,13 @@
 --   },
 -- })
 
+-- Touchscreens. The touch layer is on by default; the 2-in-1 watcher keeps
+-- the transform in step whenever it turns the screen.
+hl.config({ input = { touchdevice = { enabled = true } } })
+
+-- Swiping in from the edge of the touchscreen changes workspaces.
+hl.config({ gestures = { workspace_swipe_touch = true } })
+
 -- App-specific touchpad scroll speeds.
 -- o.window("(Alacritty|kitty)", { scroll_touchpad = 1.5 })
 -- o.window("foot", { scroll_touchpad = 2.0 })

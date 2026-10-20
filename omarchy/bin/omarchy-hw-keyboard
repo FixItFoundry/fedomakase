@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# omarchy:summary=Print the detected Hyprland built-in keyboard device name
+
+# The built-in keyboard is the one wired to the machine's own controller.
+# Everything else is either a virtual keyboard (a key remapper or an input
+# method) or a device that the kernel exposes as a keyboard but that carries
+# no keys worth keeping alive: the embedded controller's button device, the
+# headset jack, the video bus and the power button.
+keyboards=$(hyprctl devices -j | jq -r '.keyboards[].name')
+
+device=""
+while IFS= read -r name; do
+  [[ -n $name ]] || continue
+  case "$name" in
+    *virtual* | cros_ec* | sof-* | video-bus | power-button | hidpp* | bluetooth*) continue ;;
+  esac
+  device="$name"
+  break
+done <<<"$keyboards"
+
+[[ -n $device ]] && echo "$device"

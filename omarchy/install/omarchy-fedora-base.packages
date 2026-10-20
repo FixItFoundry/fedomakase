@@ -186,6 +186,9 @@ wtype
 xdg-terminal-exec
 qemu-user-static
 
+# Sensors (accelerometer input for auto-rotate on 2-in-1s)
+iio-sensor-proxy
+
 # Fonts & Icon Sets
 fontconfig
 google-noto-fonts-common

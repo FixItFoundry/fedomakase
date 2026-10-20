@@ -1,0 +1,8 @@
+#!/bin/bash
+
+# omarchy:summary=Print the 2-in-1's current mode: tablet or laptop
+# omarchy:hidden=true
+
+# A manual override wins over the hardware, so a 2-in-1 whose embedded
+# controller never reports the fold can still be switched by hand.
+exec /usr/bin/python3 "$OMARCHY_PATH/default/input/tablet-mode.py" state

@@ -1,0 +1,8 @@
+#!/bin/bash
+
+# omarchy:summary=Returns true when the 2-in-1 is folded into tablet mode
+# omarchy:hidden=true
+
+# ChromeOS-class embedded controllers report a tablet-mode switch, which the
+# kernel exposes as SW_TABLET_MODE on the controller's switch device.
+exec /usr/bin/python3 "$OMARCHY_PATH/default/input/tablet-mode.py" state >/dev/null

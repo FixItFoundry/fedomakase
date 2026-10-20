@@ -1,0 +1,53 @@
+#!/bin/bash
+
+# omarchy:summary=Watch for 2-in-1 mode changes and apply them to the session
+# omarchy:hidden=true
+
+# A 2-in-1 in tablet mode has no keyboard under the user's hands and no
+# touchpad beside it, so both are switched off and the screen turns portrait.
+# Unfolding puts them back.
+
+LOCK="${XDG_RUNTIME_DIR:-/tmp}/omarchy-2in1-watch.lock"
+TABLET_MODE="$OMARCHY_PATH/default/input/tablet-mode.py"
+OVERRIDE_FILE="$HOME/.local/state/omarchy/2in1/mode"
+
+exec 9>"$LOCK"
+flock -n 9 || exit 0
+
+# A machine with no tablet-mode switch and no manual override has nothing to
+# watch, so the watcher stays out of the way.
+if ! /usr/bin/python3 "$TABLET_MODE" supported && [[ ! -f $OVERRIDE_FILE ]]; then
+  exit 0
+fi
+
+set_device_enabled() {
+  local name="$1" enabled="$2" quoted
+  [[ -n $name ]] || return 0
+  quoted=${name//\\/\\\\}
+  quoted=${quoted//\"/\\\"}
+  hyprctl eval "hl.device({ name = \"$quoted\", enabled = $enabled })" >/dev/null 2>&1 || true
+}
+
+apply_mode() {
+  local mode="$1"
+
+  local touchpad keyboard
+  touchpad=$(omarchy-hw-touchpad)
+  keyboard=$(omarchy-hw-keyboard)
+
+  if [[ $mode == tablet ]]; then
+    set_device_enabled "$touchpad" false
+    set_device_enabled "$keyboard" false
+  else
+    set_device_enabled "$touchpad" true
+    set_device_enabled "$keyboard" true
+  fi
+
+  omarchy-2in1-rotate auto >/dev/null 2>&1 || true
+}
+
+# The helper prints the mode whenever it changes, so one process watches the
+# switch and the override for the whole session.
+/usr/bin/python3 "$TABLET_MODE" watch | while IFS= read -r mode; do
+  apply_mode "$mode"
+done

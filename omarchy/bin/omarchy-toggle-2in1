@@ -1,0 +1,54 @@
+#!/bin/bash
+
+# omarchy:summary=Switch the 2-in-1 between tablet and laptop mode by hand
+# omarchy:args=[tablet|laptop|auto|toggle]
+
+# Some 2-in-1s never tell the kernel they were folded: the embedded
+# controller has no hinge sensor, so the switch never fires. This sets the
+# mode by hand until "auto" hands the decision back to the hardware.
+
+STATE_DIR="$HOME/.local/state/omarchy/2in1"
+OVERRIDE_FILE="$STATE_DIR/mode"
+LOCK="${XDG_RUNTIME_DIR:-/tmp}/omarchy-2in1-watch.lock"
+ACTION="${1:-toggle}"
+
+current() {
+  omarchy-2in1-mode
+}
+
+# The watcher leaves a machine that has no tablet-mode switch alone, so a
+# machine that is being driven by hand needs one started.
+ensure_watcher() {
+  if flock -n "$LOCK" true 2>/dev/null; then
+    omarchy-2in1-watch >/dev/null 2>&1 &
+  fi
+}
+
+set_mode() {
+  local mode="$1"
+  mkdir -p "$STATE_DIR"
+  printf '%s\n' "$mode" >"$OVERRIDE_FILE"
+  ensure_watcher
+  echo "$mode"
+}
+
+clear_mode() {
+  rm -f "$OVERRIDE_FILE"
+  echo auto
+}
+
+case "$ACTION" in
+  tablet | laptop) set_mode "$ACTION" ;;
+  auto) clear_mode ;;
+  toggle)
+    if [[ $(current) == tablet ]]; then
+      set_mode laptop
+    else
+      set_mode tablet
+    fi
+    ;;
+  *)
+    echo "Usage: omarchy-toggle-2in1 [tablet|laptop|auto|toggle]" >&2
+    exit 1
+    ;;
+esac
