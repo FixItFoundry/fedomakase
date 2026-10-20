@@ -93,6 +93,8 @@ for b in "$REPO_DIR/build/build-netinstall-iso.sh" "$REPO_DIR/build/build-offlin
   name=$(basename "$b")
   check "$name: set -euo pipefail"        grep -q 'set -euo pipefail' "$b"
   check "$name: gum download not swallowed" bash -c "! grep -E 'wget .*gum.*\|\| true' '$b'"
+  check "$name: uses inst.ks=hd:LABEL (USB+CDROM)" grep -q 'inst.ks=hd:LABEL=\$ISO_LABEL:' "$b"
+  check "$name: patches efiboot.img GRUB config" grep -q 'GRUB    CFG' "$b"
 done
 
 # --- No giant binaries in the repo ---

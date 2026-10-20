@@ -267,19 +267,45 @@ mkdir -p "$BUILD_DIR/extracted/omarchy-fedora"
 rsync -a --exclude="*.iso" --exclude=".git" --exclude="._*" --exclude=".DS_Store" "$OMARCHY_DIR/" "$BUILD_DIR/extracted/omarchy-fedora/"
 find "$BUILD_DIR/extracted/omarchy-fedora" \( -name "._*" -o -name ".DS_Store" \) -delete 2>/dev/null || true
 
-# 6. Update GRUB boot configuration
+# 6. Update GRUB boot configuration (ISO9660 + embedded UEFI efiboot.img)
 echo "[6/7] Updating bootloader configuration..."
-for cfg in "$BUILD_DIR/extracted/boot/grub2/grub.cfg" "$BUILD_DIR/extracted/EFI/BOOT/grub.cfg"; do
+for cfg in "$BUILD_DIR/extracted/boot/grub2/grub.cfg" \
+           "$BUILD_DIR/extracted/EFI/BOOT/grub.cfg" \
+           "$BUILD_DIR/extracted/EFI/BOOT/BOOT.conf"; do
   if [[ -f "$cfg" ]]; then
     sed -i 's/set default=.*/set default="0"/' "$cfg"
     sed -i 's/set timeout=.*/set timeout=1/' "$cfg"
-    # Remove any existing inst.ks=/inst.text parameters to prevent duplicates
+    # Remove any existing inst.ks=/inst.text/rd.live.check parameters to prevent duplicates
     sed -i 's/ inst\.ks=[^ ]*//g' "$cfg"
     sed -i 's/ inst\.text//g' "$cfg"
-    # Append inst.ks= and force text mode (GUI overrides TTY switches)
-    sed -i "s|inst.stage2=hd:LABEL=[^ ]*|& inst.ks=cdrom:/omarchy-ks.cfg inst.text|g" "$cfg"
+    sed -i 's/ rd\.live\.check//g' "$cfg"
+    # Append inst.ks=hd:LABEL=... (works on both USB sticks and CD-ROMs) and force text mode
+    sed -i "s|inst.stage2=hd:LABEL=[^ ]*|& inst.ks=hd:LABEL=$ISO_LABEL:/omarchy-ks.cfg inst.text|g" "$cfg"
   fi
 done
+
+python3 - "$BUILD_DIR/efiboot.img" "$BUILD_DIR/extracted/EFI/BOOT/grub.cfg" << 'PY'
+import struct, sys
+img_path, cfg_path = sys.argv[1], sys.argv[2]
+data = bytearray(open(img_path, "rb").read())
+cfg = open(cfg_path, "rb").read()
+bps, spc, res, nfats, rde, _, _, spf = struct.unpack("<HBHBHHBH", data[11:24])
+csz = bps * spc
+dstart = (res + nfats * spf + (rde * 32 // bps)) * bps
+if len(cfg) > csz:
+    sys.exit(f"Error: EFI grub.cfg ({len(cfg)}B) exceeds FAT cluster ({csz}B)")
+updated = 0
+for i in range(0, len(data) - 32, 32):
+    if data[i:i+11] in (b"GRUB    CFG", b"BOOT~1  CON") and data[i+11] == 0x20:
+        clus = struct.unpack("<H", data[i+26:i+28])[0]
+        off = dstart + (clus - 2) * csz
+        data[off:off+csz] = cfg.ljust(csz, b"\x00")
+        struct.pack_into("<I", data, i + 28, len(cfg))
+        updated += 1
+if not updated:
+    sys.exit("Error: GRUB.CFG entry not found in efiboot.img")
+open(img_path, "wb").write(data)
+PY
 
 # Verify the extracted tree before spending time on the repack
 for f in "$KS" \
