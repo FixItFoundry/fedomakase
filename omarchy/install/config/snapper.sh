@@ -4,21 +4,25 @@ template="${OMARCHY_SNAPPER_TEMPLATE:-${OMARCHY_PATH:-/usr/share/omarchy}/defaul
 
 echo "Configuring Omarchy Snapper snapshot retention"
 
+mkdir -p /etc/snapper/config-templates
+install -m 0644 "$template" /etc/snapper/config-templates/omarchy 2>/dev/null || true
+
 if [[ ! -f $SNAPPER_CONFIG_PATH ]]; then
   mkdir -p "$(dirname "$SNAPPER_CONFIG_PATH")"
 
   if [[ ${OMARCHY_SNAPPER_CONFIGURE_TEST:-0} == "1" ]]; then
     : >"$SNAPPER_CONFIG_PATH"
   else
-    snapper --no-dbus -c root create-config / >/dev/null 2>&1 || snapper -c root create-config / >/dev/null
+    snapper --no-dbus -c root create-config / >/dev/null 2>&1 || snapper -c root create-config / >/dev/null 2>&1 || true
   fi
 fi
 
 install -m 0644 "$template" "$SNAPPER_CONFIG_PATH"
 
-mkdir -p "$(dirname "$SNAPPER_CONF_PATH")"
+mkdir -p "$(dirname "$SNAPPER_CONF_PATH")" /etc/sysconfig
 printf '%s\n' 'SNAPPER_CONFIGS="root"' >"$SNAPPER_CONF_PATH"
-chmod 0644 "$SNAPPER_CONF_PATH"
+printf '%s\n' 'SNAPPER_CONFIGS="root"' >/etc/sysconfig/snapper
+chmod 0644 "$SNAPPER_CONF_PATH" /etc/sysconfig/snapper
 
 systemctl disable --now snapper-timeline.timer >/dev/null 2>&1 || true
 systemctl enable --now snapper-cleanup.timer >/dev/null 2>&1 || true

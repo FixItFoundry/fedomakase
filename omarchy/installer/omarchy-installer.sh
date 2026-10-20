@@ -1,37 +1,49 @@
 #!/bin/bash
 # Fedomakase Interactive TTY Installer (omarchy-installer.sh)
-# Runs inside Anaconda's %pre on TTY3. Uses Gum to gather every install choice
-# and writes /tmp/fedomakase-part.cfg — an Anaconda include file consumed by
-# omarchy-ks.cfg via %include. Also writes /tmp/fedomakase-luks-pass when
-# encryption is selected (used once by systemd-cryptenroll in %post),
-# /tmp/fedomakase-input-method for CJK/XKB layout seeding, and
-# /tmp/fedomakase-git-identity for omarchy-provision-user git setup.
+# 1-to-1 port of upstream Omarchy ISO `configurator` + `setup-form.sh` for
+# Anaconda `%pre`. Hardware-agnostic and visually/behaviorally indistinguishable
+# from the upstream Omarchy installer.
+#
+# Outputs consumed by omarchy-ks.cfg:
+#   /tmp/fedomakase-part.cfg      (%include partitioning, keyboard, timezone, network, user)
+#   /tmp/fedomakase-luks-pass     (LUKS passphrase when encrypted, used once in %post)
+#   /tmp/fedomakase-input-method  (INPUT_METHOD + XKB_LAYOUT for /etc/omarchy/input-method)
+#   /tmp/fedomakase-git-identity  (OMARCHY_USER_NAME + OMARCHY_USER_EMAIL for git config)
 
-set -euo pipefail
+set -uo pipefail
 
-export TERM=linux
+export TERM="${TERM:-linux}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OMARCHY_PATH="${OMARCHY_PATH:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+LOGO_PATH="$OMARCHY_PATH/logo.txt"
 
-# Wait for KMS / framebuffer console geometry to settle before measuring width
-wait_for_stable_terminal() {
-  local prev="" cur="" stable=0 i
-  for ((i = 0; i < 30; i++)); do
-    local sz fb_sz="" fb_nm=""
-    sz=$(stty size 2>/dev/null || echo "24 80")
-    [[ -r /sys/class/graphics/fb0/virtual_size ]] && fb_sz=$(cat /sys/class/graphics/fb0/virtual_size 2>/dev/null || true)
-    [[ -r /sys/class/graphics/fb0/name ]] && fb_nm=$(cat /sys/class/graphics/fb0/name 2>/dev/null || true)
-    cur="${sz}|${fb_nm}|${fb_sz}"
-    if [[ -n "$cur" && "$cur" == "$prev" ]]; then
-      stable=$((stable + 1))
-      (( stable >= 3 )) && break
-    else
-      prev="$cur"
-      stable=0
-    fi
-    sleep 0.1
-  done
-}
+SETUP_FORM="$OMARCHY_PATH/install/provisioning/setup-form.sh"
+if [[ ! -r "$SETUP_FORM" ]]; then
+  echo "ERROR: shared setup form not found at $SETUP_FORM" >&2
+  exit 1
+fi
+# shellcheck disable=SC1090
+source "$SETUP_FORM"
 
-# Scale console font on high-DPI panels (e.g., 2.8K OLED) to ~48 rows while keeping >=82 columns
+PART_CFG="/tmp/fedomakase-part.cfg"
+LUKS_PASS_FILE="/tmp/fedomakase-luks-pass"
+INPUT_METHOD_FILE="/tmp/fedomakase-input-method"
+GIT_IDENTITY_FILE="/tmp/fedomakase-git-identity"
+rm -f "$PART_CFG" "$LUKS_PASS_FILE" "$INPUT_METHOD_FILE" "$GIT_IDENTITY_FILE"
+
+export GUM_CONFIRM_PROMPT_FOREGROUND="6"
+export GUM_CONFIRM_SELECTED_FOREGROUND="0"
+export GUM_CONFIRM_SELECTED_BACKGROUND="2"
+export GUM_CONFIRM_UNSELECTED_FOREGROUND="7"
+export GUM_CONFIRM_UNSELECTED_BACKGROUND="0"
+
+LOGO_WIDTH=0
+if [[ -r "$LOGO_PATH" ]]; then
+  LOGO_WIDTH=$(awk '{ if (length > max) max = length } END { print max+0 }' "$LOGO_PATH")
+fi
+(( LOGO_WIDTH > 0 )) || LOGO_WIDTH=60
+
+# Scale console font on high-DPI panels to ~48 rows while keeping >=82 columns
 scale_console_font() {
   [[ $(tty 2>/dev/null) == /dev/tty* ]] || return 0
   local target_rows=48 min_width=81
@@ -53,402 +65,544 @@ set_tokyo_night_colors() {
   [[ $(tty 2>/dev/null) == /dev/tty* ]] || return 0
   printf '\e]P01a1b26\e]P1f7768e\e]P29ece6a\e]P3e0af68\e]P47aa2f7\e]P5bb9af7\e]P67dcfff\e]P7a9b1d6'
   printf '\e]P8414868\e]P9f7768e\e]PA9ece6a\e]PBe0af68\e]PC7aa2f7\e]PDbb9af7\e]PE7dcfff\e]PFc0caf5'
+  printf '\033[0m'
 }
+
+measure_terminal() {
+  TERM_WIDTH=$(stty size 2>/dev/null </dev/tty | awk '{print $2}')
+  [[ ${TERM_WIDTH:-} =~ ^[0-9]+$ ]] && (( TERM_WIDTH > 0 )) || TERM_WIDTH=${COLUMNS:-80}
+
+  PADDING_LEFT=$(((TERM_WIDTH - LOGO_WIDTH) / 2))
+  (( PADDING_LEFT < 0 )) && PADDING_LEFT=0
+  PADDING_LEFT_SPACES=$(printf "%*s" "$PADDING_LEFT" "")
+
+  PADDING="0 0 0 $PADDING_LEFT"
+  export GUM_CHOOSE_PADDING="$PADDING"
+  export GUM_FILTER_PADDING="$PADDING"
+  export GUM_INPUT_PADDING="$PADDING"
+  export GUM_SPIN_PADDING="$PADDING"
+  export GUM_TABLE_PADDING="$PADDING"
+  export GUM_CONFIRM_PADDING="$PADDING"
+}
+
+wait_for_stable_terminal() {
+  local width last="" stable=0 waited=0
+  while (( waited < 5000 )); do
+    width=$(stty size 2>/dev/null </dev/tty | awk '{print $2}')
+    [[ $width =~ ^[0-9]+$ ]] || width=0
+    if [[ $width == "$last" ]] && (( width >= LOGO_WIDTH )); then
+      (( ++stable >= 3 )) && break
+    else
+      stable=0
+    fi
+    last=$width
+    sleep 0.2
+    (( waited += 200 ))
+  done
+}
+
+clear_logo() {
+  measure_terminal
+  printf "\033[H\033[2J"
+  if [[ -r "$LOGO_PATH" ]]; then
+    gum style --foreground 2 --padding "1 0 0 $PADDING_LEFT" "$(<"$LOGO_PATH")"
+  fi
+}
+
+greeter() {
+  measure_terminal
+
+  local rows logo_h content_h top cols logo_row tagline_row hint_row
+  local tagline hint tpad hpad anim=""
+  cols=$TERM_WIDTH
+  rows=$(stty size 2>/dev/null </dev/tty | awk '{print $1}')
+  [[ $rows =~ ^[0-9]+$ ]] || rows=${LINES:-24}
+  logo_h=$(wc -l <"$LOGO_PATH" 2>/dev/null || echo 6)
+
+  content_h=$((logo_h + 4))
+  top=$(((rows - content_h) / 2))
+  (( top < 0 )) && top=0
+  logo_row=$((top + 1))
+  tagline_row=$((top + logo_h + 2))
+  hint_row=$((top + logo_h + 4))
+
+  printf '\033[?25l\033[H\033[2J'
+
+  printf '\033[%d;1H' "$logo_row"
+  if [[ -r "$LOGO_PATH" ]]; then
+    gum style --foreground 2 --padding "0 0 0 $PADDING_LEFT" "$(<"$LOGO_PATH")"
+  fi
+
+  tagline="Beautiful, Fun & Agentic Linux by DHH"
+  tpad=$(((cols - ${#tagline}) / 2)); (( tpad < 0 )) && tpad=0
+  printf '\033[%d;%dH%s' "$tagline_row" "$((tpad + 1))" "$tagline"
+
+  hint="Press Return to Start Install"
+  hpad=$(((cols - ${#hint}) / 2)); (( hpad < 0 )) && hpad=0
+  printf '\033[%d;%dH\033[2m%s\033[0m' "$hint_row" "$((hpad + 1))" "$hint"
+
+  if command -v ttfx &>/dev/null && [[ -r "$LOGO_PATH" ]]; then
+    printf '\033[%d;1H\0337' "$((logo_row + logo_h))"
+    ttfx -i "$LOGO_PATH" \
+      --canvas-width "$((cols > 2 ? cols - 2 : cols))" \
+      --anchor-text c \
+      --frame-rate 60 \
+      --reuse-canvas \
+      --xterm-colors \
+      colorshift \
+      --gradient-stops 2 10 6 10 \
+      --gradient-frames 3 \
+      --cycles 1000 \
+      --final-gradient-stops 2 \
+      </dev/null >/dev/tty 2>/dev/null &
+    anim=$!
+  fi
+
+  IFS= read -r _ </dev/tty || true
+  if [[ -n "$anim" ]]; then
+    kill "$anim" 2>/dev/null || true
+    wait "$anim" 2>/dev/null || true
+  fi
+  stty sane </dev/tty 2>/dev/null || true
+  printf '\033[0m\033[H\033[2J\033[?25h'
+}
+
+abort() {
+  gum style "${1:-Aborted installation}"
+  exit 1
+}
+
+step() {
+  clear_logo
+  echo
+  gum style --padding "0 0 0 $PADDING_LEFT" "$1"
+  echo
+}
+
+say() {
+  gum style --padding "0 0 0 $PADDING_LEFT" "$@"
+}
+
+notice() {
+  clear_logo
+  echo
+  gum spin --spinner "pulse" --title "$1" -- sleep "${2:-2}"
+  echo
+}
+
+# Fallback timezone prompt when timedatectl has no D-Bus inside Anaconda %pre
+omarchy_prompt_timezone() {
+  local guess status tz_list
+  guess=$(tzupdate -p 2>/dev/null) || guess=""
+  if timedatectl list-timezones &>/dev/null; then
+    tz_list=$(timedatectl list-timezones)
+  elif [[ -r /usr/share/zoneinfo/zone1970.tab ]]; then
+    tz_list=$({ echo "UTC"; awk '!/^#/ && NF>=3 {print $3}' /usr/share/zoneinfo/zone1970.tab | sort -u; })
+  else
+    tz_list=$'UTC\nAmerica/New_York\nAmerica/Chicago\nAmerica/Denver\nAmerica/Los_Angeles\nAmerica/Toronto\nAmerica/Vancouver\nAmerica/Sao_Paulo\nEurope/London\nEurope/Paris\nEurope/Berlin\nEurope/Amsterdam\nEurope/Madrid\nEurope/Rome\nEurope/Zurich\nEurope/Stockholm\nEurope/Warsaw\nAsia/Tokyo\nAsia/Seoul\nAsia/Shanghai\nAsia/Singapore\nAsia/Kolkata\nAustralia/Sydney\nPacific/Auckland'
+  fi
+
+  if [[ -n $guess ]]; then
+    timezone=$(printf '%s\n' "$tz_list" | gum choose --height 10 --selected "$guess" --header "Timezone") && status=0 || status=$?
+  else
+    timezone=$(printf '%s\n' "$tz_list" | gum filter --height 10 --header "Timezone") && status=0 || status=$?
+  fi
+  ((status == 0)) || return $status
+
+  [[ -n $timezone ]] || timezone="UTC"
+}
+
+# STEP 1: KEYBOARD LAYOUT
+keyboard_form() {
+  local status
+
+  while true; do
+    clear_logo
+    echo
+    say "Let's setup your machine..."
+    echo
+
+    omarchy_prompt_keyboard && status=0 || status=$?
+    ((status == 0)) && break
+    ((status == OMARCHY_FORM_BACK)) && continue
+    abort
+  done
+
+  if [[ $(tty 2>/dev/null) == "/dev/tty"* ]]; then
+    loadkeys "$keyboard" 2>/dev/null || true
+  fi
+}
+
+# STEP 2: USER ACCOUNT
+user_form() {
+  step "Let's setup your user account..."
+
+  omarchy_prompt_username || return $?
+  omarchy_prompt_password || return $?
+
+  password_hash=$(printf '%s' "$password" | openssl passwd -6 -stdin)
+
+  omarchy_prompt_identity || return $?
+  omarchy_prompt_hostname || return $?
+  omarchy_prompt_timezone || return $?
+}
+
+user_step() {
+  local status
+
+  while true; do
+    user_form && status=0 || status=$?
+    if ((status != 0)); then
+      ((status == OMARCHY_FORM_BACK)) || abort
+      keyboard_form
+      continue
+    fi
+
+    echo -e "Field,Value
+Username,$username
+Password,$(printf "%${#password}s" | tr ' ' '*')
+Full name,${full_name:-[Skipped]}
+Email address,${email_address:-[Skipped]}
+Hostname,$hostname
+Timezone,$timezone
+Keyboard,$keyboard" |
+      gum table -s "," -p | sed "s/^/${PADDING_LEFT_SPACES}/"
+
+    echo
+    if gum confirm --negative "No, change it" "Does this look right?"; then
+      break
+    else
+      keyboard_form
+    fi
+  done
+}
+
+# STEP 3: DISK
+get_disk_info() {
+  local device="$1"
+  local size vendor model label
+
+  size=$(lsblk -dno SIZE "$device" 2>/dev/null)
+  vendor=$(lsblk -dno VENDOR "$device" 2>/dev/null | sed 's/ *$//')
+  model=$(lsblk -dno MODEL "$device" 2>/dev/null | sed 's/ *$//')
+
+  label=""
+  if [[ -n $vendor && -n $model ]]; then
+    if [[ $model == *$vendor* ]]; then
+      label="$model"
+    else
+      label="$vendor $model"
+    fi
+  elif [[ -n $model ]]; then
+    label="$model"
+  elif [[ -n $vendor ]]; then
+    label="$vendor"
+  fi
+
+  local display="$device"
+  [[ -n $size ]] && display="$display ($size)"
+  [[ -n $label ]] && display="$display - $label"
+
+  local part_summary
+  part_summary=$(lsblk -nro TYPE,NAME,FSTYPE,MOUNTPOINT "$device" 2>/dev/null | \
+    awk '$1=="part" { printf "%s%s%s", s, ($3==""?"unknown":$3), ($4==""?"":"("$4")"); s=", " }')
+  [[ -n $part_summary ]] && display+=" [$part_summary]"
+
+  echo "$display"
+}
+
+get_root_disk() {
+  local device="$1"
+  local parent
+
+  [[ -n $device ]] || return 1
+  device=$(readlink -f "$device" 2>/dev/null || printf "%s\n" "$device")
+
+  while true; do
+    parent=$(lsblk -dno PKNAME "$device" 2>/dev/null | tail -n1)
+    [[ -n $parent ]] || break
+    device="/dev/$parent"
+  done
+
+  if [[ $(lsblk -dno TYPE "$device" 2>/dev/null) == "disk" ]]; then
+    printf "%s\n" "$device"
+  fi
+}
+
+to_gb() {
+  awk -v bytes="$1" 'BEGIN {printf "%.1fGB", bytes/1024/1024/1024}'
+}
+
+disk_form() {
+  step "Let's select where to install Omarchy..."
+
+  local boot_source="" exclude_disk="" mp
+  for mp in /run/install/repo /run/install/isodir /run/install/source /run/archiso/bootmnt; do
+    boot_source=$(findmnt -no SOURCE "$mp" 2>/dev/null || true)
+    [[ -n "$boot_source" ]] && break
+  done
+  exclude_disk=$(get_root_disk "$boot_source" || true)
+
+  local available_disks
+  available_disks=$(
+    lsblk -dpno NAME,TYPE |
+      awk '$2=="disk"{print $1}' |
+      grep -E '/dev/(sd|hd|vd|nvme|mmcblk|xv)' |
+      { if [[ -n "$exclude_disk" ]]; then grep -Fvx "$exclude_disk"; else cat; fi; }
+  )
+
+  local disk_options=""
+  while IFS= read -r device; do
+    if [[ -n "$device" ]]; then
+      disk_info=$(get_disk_info "$device")
+      disk_options="$disk_options$disk_info"$'\n'
+    fi
+  done <<<"$available_disks"
+
+  selected_display=$(printf '%s' "$disk_options" | gum choose --header "Select install disk") || abort
+  disk=$(echo "$selected_display" | awk '{print $1}')
+}
+
+# STEP 4: INSTALL MODE & ENCRYPTION
+open_partition_tool() {
+  step "Partition tool for $disk"
+  gum style "Create unallocated free space for Omarchy, then write changes and quit."
+  gum style --foreground 8 "Do not create an Omarchy partition here — leave the target area as Free space."
+  gum style --foreground 8 "Tip: free-space install needs at least 32GB unallocated, plus 2GB more if no ESP already exists."
+  echo
+  gum confirm --affirmative "Open cfdisk" --negative "Back" "Open partition tool for $disk?" || return 0
+
+  clear
+  cfdisk "$disk" || true
+  partprobe "$disk" 2>/dev/null || true
+  sync
+  sleep 1
+}
+
+free_space_bytes() {
+  parted -ms "$disk" unit B print free </dev/null 2>/dev/null | \
+    awk -F: '
+      $NF ~ /free/ {
+        size=$4;
+        gsub(/B/, "", size);
+        if (size+0 > max+0) max=size;
+      }
+      END {
+        print max+0;
+      }'
+}
+
+requires_full_disk_install() {
+  local pt_type free_b
+  pt_type=$(lsblk -dno PTTYPE "$disk" 2>/dev/null)
+  [[ -z "$pt_type" ]] && return 0
+
+  free_b=$(free_space_bytes)
+  [[ -z "$free_b" || "$free_b" -eq 0 ]]
+}
+
+not_enough_space() {
+  local available="${1:-0}"
+  step "Not enough free space on $disk"
+  say --foreground 1 "$disk has $(to_gb "$available") of usable free space; Omarchy needs at least 32GB."
+  say "Open the partition tool to free at least 32GB on $disk, then try again."
+  echo
+  if ! gum confirm --affirmative "Back" --negative "Open partition tool" "Return to installation mode?"; then
+    open_partition_tool
+  fi
+  return 1
+}
+
+run_partition_decide() {
+  partprobe "$disk" 2>/dev/null || true
+  sleep 1
+
+  local free_b min_b=$((32 * 1024 * 1024 * 1024))
+  free_b=$(free_space_bytes)
+  if [[ -z "$free_b" ]] || (( free_b < min_b )); then
+    not_enough_space "${free_b:-0}"
+    return $?
+  fi
+
+  local mode="encrypted" affirmative confirm_status
+  while true; do
+    clear_logo
+    echo
+    say "Install Omarchy in the $(to_gb "$free_b") of free space."
+
+    case $mode in
+      encrypted)
+        say --foreground 8 "Press Ctrl+C for unencrypted install."
+        affirmative="Yes, install"
+        ;;
+      unencrypted)
+        affirmative="Yes, install without encryption"
+        ;;
+    esac
+    echo
+
+    gum confirm --affirmative "$affirmative" --negative "No, change it" \
+      "Confirm installing on $disk"
+    confirm_status=$?
+
+    case $confirm_status in
+      0)
+        [[ $mode == "encrypted" ]] && encrypt_installation=true || encrypt_installation=false
+        return 0
+        ;;
+      1)
+        return 1
+        ;;
+      130)
+        [[ $mode == "encrypted" ]] && mode="unencrypted" || mode="encrypted"
+        ;;
+      *)
+        abort
+        ;;
+    esac
+  done
+}
+
+confirm_disk_overwrite() {
+  local mode="encrypted"
+  local affirmative confirm_status
+
+  while true; do
+    clear_logo
+    echo
+    say "Everything will be overwritten. There is no recovery possible."
+
+    if [[ $mode == "encrypted" ]]; then
+      say --foreground 8 "Press Ctrl+C for unencrypted install."
+      affirmative="Yes, install"
+    else
+      affirmative="Yes, install without encryption"
+    fi
+
+    echo
+    gum confirm --affirmative "$affirmative" --negative "No, change it" "Confirm overwriting ${disk}"
+    confirm_status=$?
+
+    case $confirm_status in
+      0)
+        [[ $mode == "encrypted" ]] && encrypt_installation=true || encrypt_installation=false
+        return 0
+        ;;
+      1)
+        return 1
+        ;;
+      130)
+        [[ $mode == "encrypted" ]] && mode="unencrypted" || mode="encrypted"
+        ;;
+      *)
+        abort
+        ;;
+    esac
+  done
+}
+
+install_mode_form() {
+  local choices=("Full disk install")
+  if ! $full_disk_only; then
+    choices+=("Free space install (alongside existing data)")
+  fi
+  choices+=("Choose a different disk")
+
+  step "Let's select how to install Omarchy..."
+  install_mode=$(gum choose --header "Select installation mode on $disk" "${choices[@]}") || abort
+}
+
+select_installation() {
+  local full_disk_only
+
+  while true; do
+    if requires_full_disk_install; then
+      full_disk_only=true
+    else
+      full_disk_only=false
+    fi
+
+    if $full_disk_only; then
+      install_mode="Full disk install"
+    else
+      install_mode_form
+    fi
+
+    case "$install_mode" in
+      "Full disk install")
+        if confirm_disk_overwrite; then
+          install_target="full_disk"
+          return 0
+        fi
+        $full_disk_only && disk_form
+        ;;
+      "Free space install"*)
+        if run_partition_decide; then
+          install_target="free_space"
+          return 0
+        fi
+        ;;
+      "Choose a different disk")
+        disk_form
+        ;;
+    esac
+  done
+}
+
+# --- Main Wizard Execution ---
+if ! command -v gum &>/dev/null; then
+  echo "Error: 'gum' is required for the Omarchy installer." >&2
+  exit 1
+fi
+
+install_target="full_disk"
+encrypt_installation=true
 
 wait_for_stable_terminal
 scale_console_font
 set_tokyo_night_colors
+measure_terminal
 
-COLUMNS=$(tput cols 2>/dev/null || stty size 2>/dev/null | awk '{print $2}' || echo 80)
-[[ -z "$COLUMNS" || ! "$COLUMNS" =~ ^[0-9]+$ || "$COLUMNS" -le 0 ]] && COLUMNS=80
+greeter
+keyboard_form
+user_step
+disk_form
+select_installation
 
-PART_CFG="/tmp/fedomakase-part.cfg"
-LUKS_PASS_FILE="/tmp/fedomakase-luks-pass"
-INPUT_METHOD_FILE="/tmp/fedomakase-input-method"
-GIT_IDENTITY_FILE="/tmp/fedomakase-git-identity"
-rm -f "$PART_CFG" "$LUKS_PASS_FILE" "$INPUT_METHOD_FILE" "$GIT_IDENTITY_FILE"
+clear
 
-# --- Display Helpers (ANSI-based, reliable on TTY) ---
-print_center() {
-  local text="$1"
-  local pad=$(( (COLUMNS - ${#text}) / 2 ))
-  (( pad < 0 )) && pad=0
-  printf '%*s%s\n' "$pad" '' "$text"
-}
+# Write Anaconda Kickstart %include and state files
+target_disk_name=$(basename "$disk")
+gecos_name="${full_name:-$username}"
+gecos_name="${gecos_name//\"/}"
+luks_pass_escaped="${password//\"/\\\"}"
 
-print_color() {
-  local color="$1" text="$2"
-  local pad=$(( (COLUMNS - ${#text}) / 2 ))
-  (( pad < 0 )) && pad=0
-  printf '%*s\033[38;5;%sm%s\033[0m\n' "$pad" '' "$color" "$text"
-}
-
-print_bold() {
-  local color="$1" text="$2"
-  local pad=$(( (COLUMNS - ${#text}) / 2 ))
-  (( pad < 0 )) && pad=0
-  printf '%*s\033[1;38;5;%sm%s\033[0m\n' "$pad" '' "$color" "$text"
-}
-
-print_art() {
-  local lines=() max_width=0
-  while IFS= read -r line; do
-    lines+=("$line")
-    local width=0
-    for ((i=0; i<${#line}; i++)); do
-      c="${line:$i:1}"
-      if [[ "$c" == $'\xe2' ]] || [[ "$c" == $'\xef' ]]; then
-        width=$((width + 2))
-      else
-        width=$((width + 1))
-      fi
-    done
-    (( width > max_width )) && max_width=$width
-  done
-  local pad=$(( (COLUMNS - max_width) / 2 ))
-  (( pad < 0 )) && pad=0
-  local spaces
-  spaces=$(printf '%*s' "$pad" '')
-  for line in "${lines[@]}"; do
-    printf '%s\033[38;5;74m%s\033[0m\n' "$spaces" "$line"
-  done
-}
-
-if ! command -v gum &>/dev/null; then
-  echo "Error: 'gum' is required for the Fedomakase installer." >&2
-  exit 1
-fi
-
-printf '\033[2J\033[H'
-cat << 'BANNER' | print_art
-  ██████  ███    ███  █████  ██████   ██████  ██   ██  ██   ██
- ██    ██ ████  ████ ██   ██ ██   ██ ██       ██   ██  ██   ██
- ██    ██ ██ ████ ██ ███████ ██████  ██       ███████   ██████
- ██    ██ ██  ██  ██ ██   ██ ██   ██ ██       ██   ██     ██  
-  ██████  ██      ██ ██   ██ ██   ██  ██████  ██   ██     ██  
-BANNER
-
-echo ""
-print_center "Fedora Edition (Quattro) - Native Installer"
-echo ""
-print_bold 74 "Welcome to the Fedomakase Interactive Installer!"
-echo ""
-
-if ! gum confirm "Ready to configure Fedomakase for installation?"; then
-  print_color 204 "Installation aborted."
-  exit 1
-fi
-
-# 1. Keyboard Layout Selection (synced with install/provisioning/setup-form.sh)
-echo ""
-print_bold 111 "1. Keyboard Layout"
-
-OMARCHY_KEYBOARD_LAYOUTS=$'English (US)|us
-English (UK)|uk
-English (US, Dvorak)|dvorak
-English (US, Colemak)|colemak
-Belarusian|by
-Belgian|be-latin1
-Bulgarian|bg-cp1251
-Chinese (Simplified, Pinyin)|us|pinyin
-Croatian|croat
-Czech|cz
-Danish|dk-latin1
-Dutch|nl
-Estonian|et
-Finnish|fi
-French|fr
-French (Canada)|cf
-French (Switzerland)|fr_CH
-Georgian|ge
-German|de
-German (Switzerland)|de_CH-latin1
-Greek|gr
-Hebrew|il
-Hong Kong (Cangjie)|us|cangjie5
-Hungarian|hu
-Icelandic|is-latin1
-Irish|ie
-Italian|it
-Japanese|jp106|mozc
-Japanese (US keyboard)|us|mozc
-Kazakh|kazakh
-Korean|us|hangul|kr:kr104
-Kyrgyz|kyrgyz
-Lao|us||la
-Latvian|lv
-Lithuanian|lt
-Macedonian|mk-utf
-Norwegian|no-latin1
-Polish|pl
-Portuguese|pt-latin1
-Portuguese (Brazil)|br-abnt2
-Romanian|ro
-Russian|ru
-Serbian|sr-latin
-Slovak|sk-qwertz
-Slovenian|slovene
-Spanish|es
-Spanish (Latin American)|la-latin1
-Swedish|sv-latin1
-Taiwan (Zhuyin)|us|chewing
-Tajik|tj_alt-UTF8
-Turkish|trq
-Ukrainian|ua'
-
-KB_CHOICE=$(printf '%s\n' "$OMARCHY_KEYBOARD_LAYOUTS" | cut -d'|' -f1 | \
-  gum choose --height 10 --selected "English (US)" --header "Select your keyboard layout:") || true
-[[ -z "$KB_CHOICE" ]] && KB_CHOICE="English (US)"
-
-KB_ROW=$(printf '%s\n' "$OMARCHY_KEYBOARD_LAYOUTS" | awk -F'|' -v c="$KB_CHOICE" '$1==c{print; exit}')
-IFS='|' read -r KEYBOARD_LABEL KEYMAP INPUT_METHOD XKB_LAYOUT <<< "${KB_ROW:-English (US)|us}"
-KEYMAP="${KEYMAP:-us}"
-INPUT_METHOD="${INPUT_METHOD:-none}"
-XKB_LAYOUT="${XKB_LAYOUT:-}"
-
-# Load selected keymap on live TTY immediately so passphrases/passwords match
-loadkeys "$KEYMAP" 2>/dev/null || true
-
-# 2. Target Disk & Partitioning Mode Selection (Clean Install vs Dual-Boot Free Space vs Disk Clone Utility)
-echo ""
-print_bold 111 "2. Target Disk & Partitioning Mode"
-
-while true; do
-  DISKS=$(lsblk -dno NAME,SIZE,MODEL,TYPE | awk '$1 !~ /^(loop|zram|sr|fd)/ && $NF == "disk" { model=""; for(i=3;i<NF;i++) model=model $i " "; gsub(/ $/, "", model); print "/dev/"$1" ("$2" "model")" }')
-
-  if [[ -z "$DISKS" ]]; then
-    print_color 204 "Error: No suitable installation disks found!"
-    exit 1
-  fi
-
-  PART_MODE_CHOICE=$(gum choose --header "Select installation partitioning mode:" \
-    "Use Unallocated Free Space (Dual-Boot — keep existing OS partitions)" \
-    "Erase Entire Disk (Clean Install — wipe all partitions on selected drive)" \
-    "Disk Clone Utility (Block-clone smaller drive to larger NVMe + expand GPT)") || true
-
-  if [[ "$PART_MODE_CHOICE" == Disk\ Clone\ Utility* ]]; then
-    mapfile -t CLONE_DISKS <<< "$DISKS"
-    SRC_DISK_STR=$(gum choose --header "Select SOURCE drive to clone FROM (e.g. 512GB internal NVMe):" "${CLONE_DISKS[@]}") || true
-    DST_DISK_STR=$(gum choose --header "Select DESTINATION drive to clone TO (e.g. 1TB USB-C NVMe):" "${CLONE_DISKS[@]}") || true
-    SRC_DISK=$(echo "${SRC_DISK_STR:-}" | awk '{print $1}')
-    DST_DISK=$(echo "${DST_DISK_STR:-}" | awk '{print $1}')
-    if [[ -n "$SRC_DISK" && -n "$DST_DISK" && "$SRC_DISK" != "$DST_DISK" ]]; then
-      if gum confirm "Clone $SRC_DISK -> $DST_DISK now and relocate backup GPT table with sgdisk -e?"; then
-        echo ""
-        print_bold 111 "Cloning $SRC_DISK to $DST_DISK (bs=64M)..."
-        dd if="$SRC_DISK" of="$DST_DISK" bs=64M status=progress conv=fsync
-        sgdisk -e "$DST_DISK" || true
-        partprobe "$DST_DISK" 2>/dev/null || true
-        print_color 108 "Clone and GPT tail relocation complete! Power off to swap physical drives, or continue."
-        if gum confirm "Power off now to swap physical NVMe drives?"; then
-          poweroff -f
-          exit 0
-        fi
-      fi
-    else
-      print_color 204 "Source and destination drives must be valid and distinct."
-    fi
-    continue
-  fi
-  break
-done
-
-[[ -z "${PART_MODE_CHOICE:-}" ]] && PART_MODE_CHOICE="Erase Entire Disk (Clean Install — wipe all partitions on selected drive)"
-DUAL_BOOT_FREE_SPACE=false
-if [[ "$PART_MODE_CHOICE" == Use\ Unallocated\ Free\ Space* ]]; then
-  DUAL_BOOT_FREE_SPACE=true
-  print_color 108 "Dual-Boot Mode: Existing partitions on the target disk will be preserved."
-else
-  print_color 204 "WARNING: All data on the selected disk will be completely erased!"
-fi
-
-mapfile -t DISK_ARRAY <<< "$DISKS"
-SELECTED_DISK_STR=$(gum choose --header "Select the drive to install Fedomakase on:" "${DISK_ARRAY[@]}") || true
-if [[ -z "$SELECTED_DISK_STR" ]]; then
-  print_color 204 "No disk selected, aborting!"
-  exit 1
-fi
-
-TARGET_DISK=$(echo "$SELECTED_DISK_STR" | awk '{print $1}')
-TARGET_DISK_NAME=$(basename "$TARGET_DISK")
-
-if [[ ! -b "$TARGET_DISK" ]]; then
-  print_color 204 "Invalid disk selected!"
-  exit 1
-fi
-
-# 3. LUKS Encryption Setup
-echo ""
-print_bold 111 "3. Drive Encryption (LUKS2)"
-ENCRYPT_DRIVE=false
-LUKS_PASSPHRASE=""
-
-if gum confirm "Would you like to encrypt your Fedomakase Btrfs volume with LUKS2?"; then
-  while true; do
-    LUKS_PASSPHRASE=$(gum input --password --header "LUKS encryption passphrase:") || true
-    LUKS_CONFIRM=$(gum input --password --header "Confirm LUKS passphrase:") || true
-    if [[ -z "$LUKS_PASSPHRASE" ]]; then
-      print_color 204 "Passphrase cannot be empty. Please try again."
-    elif [[ "$LUKS_PASSPHRASE" != "$LUKS_CONFIRM" ]]; then
-      print_color 204 "Passphrases do not match. Please try again."
-    elif [[ "$LUKS_PASSPHRASE" == *'"'* ]]; then
-      print_color 204 "Passphrase cannot contain double-quote characters. Please try again."
-    else
-      print_color 108 "Passphrase confirmed."
-      ENCRYPT_DRIVE=true
-      break
-    fi
-  done
-fi
-
-# 4. User Account, Git Identity, Hostname & Timezone Setup
-echo ""
-print_bold 111 "4. User Account & System Identity"
-
-REAL_NAME=$(gum input --header "Full Name (used for account & git):" --placeholder "e.g. Omarchy User (hit return to skip)" --value "") || true
-REAL_NAME=${REAL_NAME//\"/}
-
-USER_EMAIL=$(gum input --header "Email Address (used for git config):" --placeholder "e.g. you@example.com (hit return to skip)" --value "") || true
-USER_EMAIL=${USER_EMAIL//\"/}
-
-RESERVED_USERNAMES='^(root|bin|daemon|mail|ftp|http|nobody|dbus|systemd-coredump|systemd-network|systemd-oom|systemd-journal-remote|systemd-resolve|systemd-timesync|tss|uuidd|alpm|git|avahi|cups|cups-browsed|lp|_talkd|polkitd|rtkit|qemu|brltty|gluster|rpc|libvirt-qemu|pcscd|nvidia-persistenced|sddm)$'
-USERNAME=""
-while true; do
-  USERNAME=$(gum input --header "Username:" --placeholder "e.g. omarchy" --value "omarchy") || true
-  if [[ "$USERNAME" =~ ^[a-z_][a-z0-9_-]*$ ]] && (( ${#USERNAME} <= 32 )) && ! [[ "$USERNAME" =~ $RESERVED_USERNAMES ]]; then
-    break
-  else
-    print_color 204 "Invalid or reserved username. Use lowercase alphanumeric characters."
-  fi
-done
-
-USER_PASSWORD=""
-while true; do
-  USER_PASSWORD=$(gum input --password --header "Enter Password for $USERNAME:") || true
-  USER_PASS_CONFIRM=$(gum input --password --header "Confirm Password for $USERNAME:") || true
-  if [[ -z "$USER_PASSWORD" ]]; then
-    print_color 204 "Password cannot be empty. Please try again."
-  elif [[ "$USER_PASSWORD" != "$USER_PASS_CONFIRM" ]]; then
-    print_color 204 "Passwords do not match. Please try again."
-  else
-    print_color 108 "User password confirmed."
-    break
-  fi
-done
-
-# Hash password so nothing sensitive or quote-sensitive lands in the kickstart
-USER_HASH=$(openssl passwd -6 "$USER_PASSWORD")
-unset USER_PASSWORD USER_PASS_CONFIRM
-
-HOSTNAME=""
-while true; do
-  HOSTNAME=$(gum input --header "Hostname:" --placeholder "Letters, digits, and dashes (default: omarchy)" --value "omarchy") || true
-  [[ -z "$HOSTNAME" ]] && HOSTNAME="omarchy"
-  if [[ "$HOSTNAME" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]]; then
-    break
-  else
-    print_color 204 "Hostname must be 1-63 letters, digits, or dashes, and cannot start or end with a dash."
-  fi
-done
-
-TIMEZONE_LIST="UTC
-America/New_York
-America/Chicago
-America/Denver
-America/Los_Angeles
-America/Phoenix
-America/Anchorage
-Pacific/Honolulu
-America/Toronto
-America/Vancouver
-America/Sao_Paulo
-Europe/London
-Europe/Dublin
-Europe/Paris
-Europe/Berlin
-Europe/Amsterdam
-Europe/Madrid
-Europe/Rome
-Europe/Zurich
-Europe/Stockholm
-Europe/Warsaw
-Europe/Athens
-Europe/Helsinki
-Europe/Kyiv
-Asia/Tokyo
-Asia/Seoul
-Asia/Shanghai
-Asia/Hong_Kong
-Asia/Taipei
-Asia/Singapore
-Asia/Kolkata
-Asia/Dubai
-Australia/Sydney
-Australia/Melbourne
-Pacific/Auckland"
-
-if [[ -r /usr/share/zoneinfo/zone1970.tab ]]; then
-  TIMEZONE_LIST=$( { echo "UTC"; awk '!/^#/ && NF>=3 {print $3}' /usr/share/zoneinfo/zone1970.tab | sort -u; } )
-fi
-
-TIMEZONE=$(printf '%s\n' "$TIMEZONE_LIST" | gum filter --height 10 --header "Select Timezone (type to filter):" --value "UTC") || true
-[[ -z "$TIMEZONE" ]] && TIMEZONE="UTC"
-
-# 5. Confirmation Summary
-PART_SUMMARY="Erase Entire Disk (Clean Install)"
-[[ $DUAL_BOOT_FREE_SPACE == true ]] && PART_SUMMARY="Use Free Space (Dual-Boot — preserve existing partitions)"
-
-echo ""
-gum style --border normal --margin "1 2" --padding "1 2" --border-foreground 74 \
-  "Installation Summary:" \
-  "  Keyboard Layout:   $KEYBOARD_LABEL ($KEYMAP)" \
-  "  Target Drive:      $TARGET_DISK" \
-  "  Partition Mode:    $PART_SUMMARY" \
-  "  LUKS Encrypted:    $ENCRYPT_DRIVE" \
-  "  User Account:      $USERNAME (${REAL_NAME:-$USERNAME})" \
-  "  Git Email:         ${USER_EMAIL:-<not set>}" \
-  "  Hostname:          $HOSTNAME" \
-  "  Timezone:          $TIMEZONE" \
-  "  Desktop:           Hyprland + SDDM + Omarchy Quattro"
-
-CONFIRM_PROMPT="Begin installation on $TARGET_DISK ($PART_SUMMARY)?"
-if ! gum confirm "$CONFIRM_PROMPT"; then
-  print_color 204 "Installation cancelled."
-  exit 1
-fi
-
-# 6. Generate Anaconda partitioning & identity include consumed by omarchy-ks.cfg
-GECOS_NAME="${REAL_NAME:-$USERNAME}"
 {
-  echo "keyboard --vckeymap=${KEYMAP}"
-  echo "timezone ${TIMEZONE} --utc"
-  echo "network --bootproto=dhcp --device=link --activate --hostname=${HOSTNAME}"
-  echo "ignoredisk --only-use=${TARGET_DISK_NAME}"
-  if [[ $DUAL_BOOT_FREE_SPACE == true ]]; then
-    echo "clearpart --none --drives=${TARGET_DISK_NAME}"
+  echo "keyboard --vckeymap=${keyboard}"
+  echo "timezone ${timezone} --utc"
+  echo "network --bootproto=dhcp --device=link --activate --hostname=${hostname}"
+  echo "ignoredisk --only-use=${target_disk_name}"
+  if [[ $install_target == "free_space" ]]; then
+    echo "clearpart --none --drives=${target_disk_name}"
   else
     echo "zerombr"
-    echo "clearpart --all --initlabel --drives=${TARGET_DISK_NAME}"
+    echo "clearpart --all --initlabel --drives=${target_disk_name}"
   fi
-  if [[ $ENCRYPT_DRIVE == true ]]; then
-    echo "autopart --type=btrfs --encrypted --luks-version=luks2 --passphrase=\"${LUKS_PASSPHRASE}\""
-    printf '%s' "$LUKS_PASSPHRASE" > "$LUKS_PASS_FILE"
+  if [[ $encrypt_installation == true ]]; then
+    echo "autopart --type=btrfs --encrypted --luks-version=luks2 --passphrase=\"${luks_pass_escaped}\""
+    printf '%s' "$password" > "$LUKS_PASS_FILE"
     chmod 600 "$LUKS_PASS_FILE"
   else
     echo "autopart --type=btrfs"
   fi
-  echo "user --name=${USERNAME} --gecos=\"${GECOS_NAME}\" --groups=wheel --password=${USER_HASH}"
+  echo "user --name=${username} --gecos=\"${gecos_name}\" --groups=wheel --password=${password_hash} --iscrypted"
 } > "$PART_CFG"
 chmod 600 "$PART_CFG"
 
-printf 'INPUT_METHOD=%s\nXKB_LAYOUT=%s\n' "$INPUT_METHOD" "$XKB_LAYOUT" > "$INPUT_METHOD_FILE"
+printf 'INPUT_METHOD=%s\nXKB_LAYOUT=%s\n' "${keyboard_input_method:-none}" "${keyboard_xkb_layout:-}" > "$INPUT_METHOD_FILE"
 chmod 644 "$INPUT_METHOD_FILE"
 
-printf 'OMARCHY_USER_NAME=%q\nOMARCHY_USER_EMAIL=%q\n' "$REAL_NAME" "$USER_EMAIL" > "$GIT_IDENTITY_FILE"
+printf 'OMARCHY_USER_NAME=%q\nOMARCHY_USER_EMAIL=%q\n' "$full_name" "$email_address" > "$GIT_IDENTITY_FILE"
 chmod 600 "$GIT_IDENTITY_FILE"
 
-unset LUKS_PASSPHRASE USER_HASH
-
-echo ""
-print_bold 108 "Fedomakase setup complete! Handing over to Anaconda..."
-sleep 2
+unset password password_confirmation password_hash luks_pass_escaped

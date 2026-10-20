@@ -2,7 +2,9 @@
 # daemons mid-install. UFW and hardware-gated services stay in their own scripts.
 systemctl enable cups.service
 systemctl enable avahi-daemon.service
-systemctl enable linux-modules-cleanup.service
+if systemctl list-unit-files linux-modules-cleanup.service &>/dev/null && systemctl list-unit-files linux-modules-cleanup.service | grep -q linux-modules-cleanup; then
+  systemctl enable linux-modules-cleanup.service
+fi
 systemctl enable docker.socket
 systemctl enable systemd-resolved.service
 systemctl enable NetworkManager.service

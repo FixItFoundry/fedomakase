@@ -15,7 +15,7 @@ end
 
 function M.files(dir, module_prefix, options)
   local exclude = options and options.exclude or {}
-  local handle = io.popen("find " .. shell_quote(dir) .. " -maxdepth 1 -type f -name '*.lua' -printf '%f\\n' 2>/dev/null | sort")
+  local handle = io.popen("find " .. shell_quote(dir) .. " -maxdepth 1 -type f -name '*.lua' ! -name '.*' -printf '%f\\n' 2>/dev/null | sort")
   if handle then
     for filename in handle:lines() do
       local name = filename:gsub("%.lua$", "")

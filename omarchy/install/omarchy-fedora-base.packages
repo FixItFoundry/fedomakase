@@ -5,8 +5,6 @@ hyprland
 hyprpaper
 hyprlock
 hypridle
-rofi-wayland
-swaync
 slurp
 grim
 wl-clipboard
@@ -82,7 +80,7 @@ nautilus-python
 gvfs-mtp
 gvfs-nfs
 gvfs-smb
-ffmpeg
+ffmpeg-free
 ffmpegthumbnailer
 vips-tools
 ImageMagick
@@ -170,6 +168,7 @@ python3
 python3-pip
 python3-gobject
 python3-poetry-core
+python3-pyxdg
 moby-engine
 docker-compose
 docker-buildx
@@ -187,13 +186,15 @@ xdg-terminal-exec
 qemu-user-static
 
 # Fonts & Icon Sets
+fontconfig
 google-noto-fonts-common
 google-noto-emoji-fonts
 google-noto-sans-fonts
 google-noto-sans-cjk-fonts
 jetbrains-mono-fonts-all
 yaru-icon-theme
-fontawesome-fonts
+fontawesome-fonts-all
+fontawesome-fonts-web
 
 # Added missing dependencies from Arch Omarchy
 lazygit
@@ -217,14 +218,17 @@ hype
 monologue
 omacalc
 omacut
+omapresent
 omasnap
-omavox
 omawrite
 owe
 owe-lockfeed
 signed
+superwhisper-bin
+tensaku
 try
 ttfx
+voxtype-bin
 mise
 localsend
 gpu-screen-recorder
@@ -239,9 +243,9 @@ intel-lpmd
 thermald
 alsa-sof-firmware
 alsa-ucm
-intel-media-driver
+libva-intel-media-driver
 libvpl
-vpl-gpu-rt
+intel-vpl-gpu-rt
 mesa-vulkan-drivers
 pipewire-alsa
 pipewire-jack-audio-connection-kit
@@ -250,9 +254,10 @@ pipewire-plugin-libcamera
 pipewire-gstreamer
 lsp-plugins-lv2
 gtk4-layer-shell
-webp-pixbuf-loader
 flashrom
 gdisk
 parted
 cryptsetup
 tpm2-tools
+kernel-devel
+elfutils-libelf-devel

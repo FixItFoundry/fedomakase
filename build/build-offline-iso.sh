@@ -7,6 +7,7 @@
 #   sudo bash build/build-offline-iso.sh /path/to/Fedora-Everything-netinst-x86_64-44-*.iso
 
 set -euo pipefail
+export COPYFILE_DISABLE=1
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
@@ -136,7 +137,8 @@ createrepo_c "$REPO_DIR_TARGET"
 
 # Payload
 mkdir -p "$BUILD_DIR/extracted/omarchy-fedora"
-rsync -a --exclude="*.iso" --exclude=".git" "$OMARCHY_DIR/" "$BUILD_DIR/extracted/omarchy-fedora/"
+rsync -a --exclude="*.iso" --exclude=".git" --exclude="._*" --exclude=".DS_Store" "$OMARCHY_DIR/" "$BUILD_DIR/extracted/omarchy-fedora/"
+find "$BUILD_DIR/extracted/omarchy-fedora" \( -name "._*" -o -name ".DS_Store" \) -delete 2>/dev/null || true
 mkdir -p "$BUILD_DIR/extracted/omarchy-fedora/installer/fonts/JetBrainsMono-NF"
 cp -rf "$NF_TMP"/. "$BUILD_DIR/extracted/omarchy-fedora/installer/fonts/JetBrainsMono-NF/"
 

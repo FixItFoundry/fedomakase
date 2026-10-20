@@ -54,9 +54,9 @@ SYNC_BINS=(omarchy-pkg-add omarchy-pkg-aur-add omarchy-pkg-drop omarchy-pkg-miss
   omarchy-update-restart omarchy-update-analyze-logs omarchy-system
   omarchy-install-dictation-voxtype omarchy-remove-dictation-voxtype
   omarchy-install-dictation-superwhisper omarchy-remove-dictation-superwhisper
-  omarchy-voxtype-config omarchy-voxtype-model omarchy-install-video-decode omarchy-first-run uwsm-app)
+  omarchy-voxtype-config omarchy-voxtype-model omarchy-install-video-decode omarchy-first-run omarchy-nvim-setup uwsm-app)
 for dest in "$OMARCHY" "$STASH/payload"; do
-  mkdir -p "$dest/bin" "$dest/install/hardware" "$dest/etc/sddm.conf.d"
+  mkdir -p "$dest/bin" "$dest/install/hardware" "$dest/etc/sddm.conf.d" "$dest/default/nvim"
   for f in "${SYNC_BINS[@]}"; do
     cp "$PAYLOAD/bin/$f" "$dest/bin/$f"
     chmod +x "$dest/bin/$f"
@@ -64,8 +64,13 @@ for dest in "$OMARCHY" "$STASH/payload"; do
   cp "$PAYLOAD/install/omarchy-fedora-base.packages" "$PAYLOAD/install/omarchy-fedora-copr.repos" "$dest/install/"
   cp "$PAYLOAD/install/hardware/all.sh" "$PAYLOAD/install/hardware/google-chromebook.sh" "$dest/install/hardware/"
   cp "$PAYLOAD/etc/sddm.conf.d/10-wayland.conf" "$dest/etc/sddm.conf.d/10-wayland.conf"
+  cp -r "$PAYLOAD/default/nvim/." "$dest/default/nvim/"
 done
 ln -sf "$OMARCHY/bin/uwsm-app" /usr/local/bin/uwsm-app
+ln -sf "$OMARCHY/bin/omarchy-nvim-setup" /usr/bin/omarchy-nvim-setup
+ln -sf "$OMARCHY/bin/omarchy-nvim-setup" /usr/bin/omarchy-nvim-refresh
+mkdir -p /usr/share/omarchy-nvim/config
+cp -r "$PAYLOAD/default/nvim/." /usr/share/omarchy-nvim/config/
 chown -R "$TARGET_USER:$TARGET_USER" "$STASH" 2>/dev/null || true
 # Live system config (kickstart does this at install time; repeat for running systems)
 cp "$PAYLOAD/etc/sddm.conf.d/10-wayland.conf" /etc/sddm.conf.d/10-wayland.conf
@@ -90,7 +95,7 @@ for pkg in "${manifest_pkgs[@]}"; do
   fi
 done
 (( ${#RESOLVED[@]} )) || { echo "Error: no manifest packages resolve — repo metadata unreachable?" >&2; exit 1; }
-dnf install -y "${RESOLVED[@]}"
+dnf install -y --allowerasing "${RESOLVED[@]}"
 
 # --- TPM2 helper on PATH + dracut module config ---
 echo "[5/7] Installing TPM2 unlock support..."

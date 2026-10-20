@@ -12,6 +12,7 @@
 #   sudo bash build/build-netinstall-iso.sh /path/to/Fedora-Everything-netinst-x86_64-44-*.iso
 
 set -euo pipefail
+export COPYFILE_DISABLE=1
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -225,7 +226,8 @@ echo "  Spliced ${#RESOLVED[@]} packages (${#MISSING[@]} excluded) into kickstar
 
 # Payload: the whole omarchy tree ships as the runtime payload
 mkdir -p "$BUILD_DIR/extracted/omarchy-fedora"
-rsync -a --exclude="*.iso" --exclude=".git" "$OMARCHY_DIR/" "$BUILD_DIR/extracted/omarchy-fedora/"
+rsync -a --exclude="*.iso" --exclude=".git" --exclude="._*" --exclude=".DS_Store" "$OMARCHY_DIR/" "$BUILD_DIR/extracted/omarchy-fedora/"
+find "$BUILD_DIR/extracted/omarchy-fedora" \( -name "._*" -o -name ".DS_Store" \) -delete 2>/dev/null || true
 
 # 6. Update GRUB boot configuration
 echo "[6/7] Updating bootloader configuration..."

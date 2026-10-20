@@ -28,6 +28,9 @@ pkg_installed() {
     libpulse) rpm -q pulseaudio-libs &>/dev/null && return 0 ;;
     vulkan-intel | vulkan-radeon | vulkan-freedreno) rpm -q mesa-vulkan-drivers &>/dev/null && return 0 ;;
     lib32-vulkan-intel | lib32-vulkan-radeon) rpm -q mesa-vulkan-drivers.i686 &>/dev/null && return 0 ;;
+    intel-media-driver) rpm -q libva-intel-media-driver &>/dev/null && return 0 ;;
+    libva-intel-driver) rpm -q intel-vaapi-driver &>/dev/null && return 0 ;;
+    vpl-gpu-rt) rpm -q intel-vpl-gpu-rt &>/dev/null && return 0 ;;
     sof-firmware) rpm -q alsa-sof-firmware &>/dev/null && return 0 ;;
     pipewire-libcamera) rpm -q pipewire-plugin-libcamera &>/dev/null && return 0 ;;
     pipewire-pulse) rpm -q pipewire-pulseaudio &>/dev/null && return 0 ;;
@@ -36,6 +39,20 @@ pkg_installed() {
     pam-u2f) rpm -q pam_u2f &>/dev/null && return 0 ;;
     broadcom-wl-dkms) rpm -q broadcom-wl &>/dev/null && return 0 ;;
     v4l2loopback-dkms) rpm -q v4l2loopback &>/dev/null && return 0 ;;
+    ffmpeg) rpm -q ffmpeg-free &>/dev/null && return 0 ;;
+    docker) rpm -q moby-engine &>/dev/null && return 0 ;;
+    fd) rpm -q fd-find &>/dev/null && return 0 ;;
+    nvim) rpm -q neovim &>/dev/null && return 0 ;;
+    vim) (rpm -q vim-enhanced &>/dev/null || rpm -q vim-minimal &>/dev/null) && return 0 ;;
+    tobi-try) rpm -q try &>/dev/null && return 0 ;;
+    imagemagick) rpm -q ImageMagick &>/dev/null && return 0 ;;
+    networkmanager) rpm -q NetworkManager &>/dev/null && return 0 ;;
+    python-gobject) rpm -q python3-gobject &>/dev/null && return 0 ;;
+    python-poetry-core) rpm -q python3-poetry-core &>/dev/null && return 0 ;;
+    tesseract-data-eng) rpm -q tesseract-langpack-eng &>/dev/null && return 0 ;;
+    woff2-font-awesome | fontawesome-fonts) (rpm -q fontawesome-fonts-web &>/dev/null || rpm -q fontawesome-fonts-all &>/dev/null) && return 0 ;;
+    openbsd-netcat) rpm -q nmap-ncat &>/dev/null && return 0 ;;
+    omarchy-nvim) [[ -d /etc/skel/.config/nvim || -d /usr/share/omarchy/default/nvim ]] && return 0 ;;
     obsidian) flatpak info md.obsidian.Obsidian &>/dev/null && return 0 ;;
     *.*.*) flatpak info -- "$pkg" &>/dev/null && return 0 ;;
   esac

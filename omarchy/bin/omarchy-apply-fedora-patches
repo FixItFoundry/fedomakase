@@ -53,7 +53,8 @@ bin/omarchy-update-aur-pkgs|from_repo|COPR-scoped package updater
 bin/omarchy-pkg-install|repoid=fedora|Fedora-scoped package browser
 config/omarchy/hooks/pre-refresh-repos.d/add-custom-repo.sample|omarchy refresh repos|hook sample text
 default/omarchy/omarchy-menu.jsonc|"label":"COPR"|menu COPR label
-etc/sddm.conf.d/10-wayland.conf|uwsm start|SDDM launches via uwsm
+default/wayland-sessions/omarchy.desktop|uwsm start|Wayland session launches via uwsm
+etc/sddm.conf.d/10-wayland.conf|start-hyprland|SDDM greeter launches via start-hyprland
 install/omarchy-fedora-copr.repos|^whelanh/omarchy$|whelanh COPR enabled
 install/omarchy-fedora-base.packages|^omasnap$|whelanh manifest set
 CHECKS

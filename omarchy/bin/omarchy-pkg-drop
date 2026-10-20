@@ -42,6 +42,9 @@ candidates_for() {
     python-terminaltexteffects) echo ttfx ;;
     libpulse) echo pulseaudio-libs ;;
     vulkan-intel | vulkan-radeon | vulkan-freedreno) echo mesa-vulkan-drivers ;;
+    intel-media-driver) echo libva-intel-media-driver ;;
+    libva-intel-driver) echo intel-vaapi-driver ;;
+    vpl-gpu-rt) echo intel-vpl-gpu-rt ;;
     sof-firmware) echo alsa-sof-firmware ;;
     pipewire-libcamera) echo pipewire-plugin-libcamera ;;
     pipewire-pulse) echo pipewire-pulseaudio ;;
@@ -50,6 +53,20 @@ candidates_for() {
     pam-u2f) echo pam_u2f ;;
     broadcom-wl-dkms) echo broadcom-wl ;;
     v4l2loopback-dkms) echo v4l2loopback ;;
+    ffmpeg) echo ffmpeg-free ;;
+    docker) echo moby-engine ;;
+    fd) echo fd-find ;;
+    nvim) echo neovim ;;
+    tobi-try) echo try ;;
+    imagemagick) echo ImageMagick ;;
+    networkmanager) echo NetworkManager ;;
+    python-gobject) echo python3-gobject ;;
+    python-poetry-core) echo python3-poetry-core ;;
+    tesseract-data-eng) echo tesseract-langpack-eng ;;
+    woff2-font-awesome | fontawesome-fonts)
+      echo fontawesome-fonts-web
+      echo fontawesome-fonts-all
+      ;;
   esac
 }
 

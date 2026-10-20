@@ -13,9 +13,11 @@ if [[ -e /dev/cros_ec ]] || grep -qiE '^(Google|ChromiumOS)' /sys/class/dmi/id/s
   fi
 
   if command -v keyd &>/dev/null; then
-    sudo mkdir -p /etc/keyd
+    sudo mkdir -p /etc/keyd /usr/share/keyd
+    sudo touch /usr/share/keyd/keyd.compose
     sudo tee /etc/keyd/cros.conf >/dev/null <<'EOF'
 [ids]
+0000:0000
 0001:0001
 18d1:*
 
@@ -33,7 +35,7 @@ f10 = volumeup
 back = back
 forward = forward
 refresh = refresh
-scale = scale
+scale = f11
 brightnessdown = brightnessdown
 brightnessup = brightnessup
 mute = mute
@@ -54,7 +56,7 @@ f10 = f10
 back = f1
 forward = f2
 refresh = f3
-scale = f5
+scale = f4
 brightnessdown = f6
 brightnessup = f7
 mute = f8

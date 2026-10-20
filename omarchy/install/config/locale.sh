@@ -33,7 +33,9 @@ if ! locale -a 2>/dev/null | grep -qi "en_US.utf-\?8"; then
     echo "en_US.UTF-8 UTF-8" >>"$locale_gen"
   fi
 
-  locale-gen >/dev/null 2>&1
+  if command -v locale-gen &>/dev/null; then
+    locale-gen >/dev/null 2>&1 || true
+  fi
 fi
 
 # Only LANG changes; LC_* lines somebody set stay.

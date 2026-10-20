@@ -27,6 +27,9 @@ map_pkg() {
     vulkan-intel | vulkan-radeon | vulkan-freedreno) echo mesa-vulkan-drivers ;;
     lib32-vulkan-intel | lib32-vulkan-radeon) echo mesa-vulkan-drivers.i686 ;;
     lib32-nvidia-utils | lib32-nvidia-580xx-utils) echo xorg-x11-drv-nvidia-libs.i686 ;;
+    intel-media-driver) echo libva-intel-media-driver ;;
+    libva-intel-driver) echo intel-vaapi-driver ;;
+    vpl-gpu-rt) echo intel-vpl-gpu-rt ;;
     sof-firmware) echo alsa-sof-firmware ;;
     pipewire-libcamera) echo pipewire-plugin-libcamera ;;
     pipewire-pulse) echo pipewire-pulseaudio ;;
@@ -35,6 +38,19 @@ map_pkg() {
     pam-u2f) echo pam_u2f ;;
     broadcom-wl-dkms) echo broadcom-wl ;;
     v4l2loopback-dkms) echo v4l2loopback ;;
+    ffmpeg) echo ffmpeg-free ;;
+    docker) echo moby-engine ;;
+    fd) echo fd-find ;;
+    nvim) echo neovim ;;
+    vim) echo vim-enhanced ;;
+    tobi-try) echo try ;;
+    imagemagick) echo ImageMagick ;;
+    networkmanager) echo NetworkManager ;;
+    python-gobject) echo python3-gobject ;;
+    python-poetry-core) echo python3-poetry-core ;;
+    tesseract-data-eng) echo tesseract-langpack-eng ;;
+    woff2-font-awesome | fontawesome-fonts) echo fontawesome-fonts-web ;;
+    openbsd-netcat) echo nmap-ncat ;;
     *) echo "$1" ;;
   esac
 }
