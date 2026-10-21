@@ -3,9 +3,6 @@
 # omarchy:summary=Print the 2-in-1's current mode: tablet, laptop or unknown
 # omarchy:hidden=true
 
-# A manual override wins over the hardware, so a 2-in-1 whose embedded
-# controller never reports the fold can still be switched by hand.
-#
-# "unknown" means the switch could not be read at all, which is a different
-# thing from "laptop" and must not be mistaken for it.
+# A manual override wins over the hardware. "unknown" means the switch could
+# not be read at all, which is not the same thing as "laptop".
 exec /usr/bin/python3 "$OMARCHY_PATH/default/input/tablet-mode.py" state

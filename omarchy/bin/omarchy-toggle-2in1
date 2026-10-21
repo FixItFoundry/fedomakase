@@ -3,9 +3,8 @@
 # omarchy:summary=Switch the 2-in-1 between tablet and laptop mode by hand
 # omarchy:args=[tablet|laptop|auto|toggle]
 
-# Some 2-in-1s never tell the kernel they were folded: the embedded
-# controller has no hinge sensor, so the switch never fires. This sets the
-# mode by hand until "auto" hands the decision back to the hardware.
+# The kernel never reports folding on some 2-in-1s, so the mode is set by
+# hand; "auto" hands control back to the hardware.
 
 STATE_DIR="$HOME/.local/state/omarchy/2in1"
 OVERRIDE_FILE="$STATE_DIR/mode"
@@ -16,8 +15,7 @@ current() {
   omarchy-2in1-mode
 }
 
-# The watcher leaves a machine that has no tablet-mode switch alone, so a
-# machine that is being driven by hand needs one started.
+# No tablet-mode switch means no watcher, so start one.
 ensure_watcher() {
   if flock -n "$LOCK" true 2>/dev/null; then
     omarchy-2in1-watch >/dev/null 2>&1 &

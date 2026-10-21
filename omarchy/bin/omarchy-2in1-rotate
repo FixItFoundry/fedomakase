@@ -4,10 +4,8 @@
 # omarchy:args=[portrait|landscape|auto]
 # omarchy:hidden=true
 
-# Without an accelerometer the only orientation the hardware can report is the
-# mode itself: a folded 2-in-1 is held portrait, an open one landscape. When
-# iio-sensor-proxy publishes an accelerometer, its reading wins, because it
-# tracks how the device is actually being held.
+# Orientation comes from an accelerometer when iio-sensor-proxy has one,
+# otherwise from the mode: folded is portrait, open is landscape.
 ORIENTATION="${1:-auto}"
 
 INTERNAL=$(omarchy-hyprland-monitor-laptop)
@@ -15,8 +13,7 @@ INTERNAL=$(omarchy-hyprland-monitor-laptop)
 
 transform_for_accelerometer() {
   local reading
-  # iio-sensor-proxy publishes the accelerometer on the system bus; some
-  # builds put it on the session bus instead.
+  # Some builds publish the sensor on the session bus instead of the system bus.
   for bus in --system --session; do
     reading=$(gdbus call "$bus" --dest net.hadess.SensorProxy \
       --object-path /net/hadess/SensorProxy \
@@ -60,9 +57,8 @@ esac
 
 [[ $transform =~ ^[0-3]$ ]] || exit 0
 
-# A monitor rule replaces the whole entry for its output, so the rule has to
-# carry the resolution, position and scale the panel is already running at.
-# Only the transform changes; everything else is read back and reapplied.
+# Monitor rules replace the whole entry, so resolution, position and scale
+# are read back off the panel and reapplied with only the transform changed.
 read -r mode position scale <<<"$(hyprctl monitors all -j | jq -r --arg internal "$INTERNAL" '
   .[] | select(.name == $internal) |
   "\([.width, .height] | max)x\([.width, .height] | min)@\(.refreshRate | floor) \(.x)x\(.y) \(.scale)"
@@ -72,6 +68,5 @@ read -r mode position scale <<<"$(hyprctl monitors all -j | jq -r --arg internal
 
 hyprctl eval "hl.monitor({ output = \"$INTERNAL\", mode = \"$mode\", position = \"$position\", scale = $scale, transform = $transform })" >/dev/null 2>&1 || true
 
-# Touch coordinates are reported in the display's own orientation, so the
-# touch layer has to be transformed the same way the panel is.
+# Touch input follows the panel's orientation.
 hyprctl eval "hl.config({ input = { touchdevice = { transform = $transform } } })" >/dev/null 2>&1 || true
