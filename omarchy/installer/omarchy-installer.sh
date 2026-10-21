@@ -643,7 +643,7 @@ luks_pass_escaped="${password//\"/\\\"}"
   else
     echo "autopart --type=btrfs"
   fi
-  echo "user --name=${username} --gecos=\"${gecos_name}\" --groups=wheel --password=${password_hash} --iscrypted"
+  echo "user --name=${username} --gecos=\"${gecos_name}\" --groups=wheel,input --password=${password_hash} --iscrypted"
 } > "$PART_CFG"
 chmod 600 "$PART_CFG"
 
