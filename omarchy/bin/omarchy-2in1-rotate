@@ -41,12 +41,16 @@ transform_for_accelerometer() {
 transform_for_mode() {
   [[ $1 == tablet ]] && echo 1 || echo 0
 }
-
 case "$ORIENTATION" in
   portrait) transform=1 ;;
   landscape) transform=0 ;;
   auto)
-    transform=$(transform_for_accelerometer) || transform=$(transform_for_mode "$(omarchy-2in1-mode)")
+    mode=$(omarchy-2in1-mode)
+    if [[ $mode == unknown ]]; then
+      # Nothing is known about the orientation, so the panel stays as it is.
+      exit 0
+    fi
+    transform=$(transform_for_accelerometer) || transform=$(transform_for_mode "$mode")
     ;;
   *)
     echo "Usage: omarchy-2in1-rotate [portrait|landscape|auto]" >&2

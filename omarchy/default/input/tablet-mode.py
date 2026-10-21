@@ -9,13 +9,18 @@ whether the screen has been folded over the keyboard.
 A manual override wins over the hardware, for 2-in-1s whose controller never
 reports the fold because it has no hinge sensor.
 
+Reading the switch needs read access to the input devices, which the input
+group grants. Without it the mode is unknown, and this says so rather than
+guessing.
+
 Usage:
   tablet-mode.py supported   exit 0 when the hardware exposes the switch
-  tablet-mode.py state       print "tablet" or "laptop"; exit 0 in tablet mode
-  tablet-mode.py watch       print "tablet" or "laptop" whenever it changes
+  tablet-mode.py state       print "tablet", "laptop" or "unknown"
+  tablet-mode.py watch       print the mode whenever it changes
 """
 
 import ctypes
+import errno
 import os
 import sys
 import time
@@ -30,6 +35,8 @@ SW_TABLET_MODE = 1
 INPUT_CLASS = os.environ.get("OMARCHY_INPUT_CLASS_PATH", "/sys/class/input")
 OVERRIDE_FILE = os.path.expanduser("~/.local/state/omarchy/2in1/mode")
 POLL_SECONDS = 0.2
+
+UNKNOWN = "unknown"
 
 libc = ctypes.CDLL("libc.so.6", use_errno=True)
 
@@ -78,7 +85,12 @@ def read_switches(path):
     """Return the device's switch bitmap, or None when it cannot be read."""
     try:
         fd = os.open(path, os.O_RDONLY)
-    except OSError:
+    except OSError as error:
+        if error.errno in (errno.EACCES, errno.EPERM):
+            sys.stderr.write(
+                f"tablet-mode: cannot read {path}: permission denied. "
+                "Add yourself to the input group to read input devices.\n"
+            )
         return None
     try:
         buffer = (ctypes.c_ulong * 16)()
@@ -95,14 +107,14 @@ def read_switches(path):
 
 
 def hardware_mode():
-    """Return True in tablet mode, False in laptop mode, None when unknown."""
+    """Return "tablet", "laptop", or "unknown"."""
     event_dir = find_tablet_device()
     if event_dir is None:
-        return None
+        return UNKNOWN
     switches = read_switches(device_path(event_dir))
     if switches is None:
-        return None
-    return bool(switches & (1 << SW_TABLET_MODE))
+        return UNKNOWN
+    return "tablet" if switches & (1 << SW_TABLET_MODE) else "laptop"
 
 
 def override_mode():
@@ -112,10 +124,8 @@ def override_mode():
             mode = handle.read().strip()
     except OSError:
         return None
-    if mode == "tablet":
-        return True
-    if mode == "laptop":
-        return False
+    if mode in ("tablet", "laptop"):
+        return mode
     return None
 
 
@@ -135,18 +145,15 @@ def main():
 
     if command == "state":
         mode = current_mode()
-        if mode is None:
-            print("laptop")
-            sys.exit(1)
-        print("tablet" if mode else "laptop")
-        sys.exit(0 if mode else 1)
+        print(mode)
+        sys.exit(0 if mode == "tablet" else (1 if mode == "laptop" else 2))
 
     if command == "watch":
         last = None
         while True:
             mode = current_mode()
-            if mode is not None and mode != last:
-                print("tablet" if mode else "laptop", flush=True)
+            if mode != last:
+                print(mode, flush=True)
                 last = mode
             time.sleep(POLL_SECONDS)
 

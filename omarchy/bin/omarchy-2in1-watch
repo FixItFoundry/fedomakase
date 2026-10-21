@@ -31,6 +31,14 @@ set_device_enabled() {
 apply_mode() {
   local mode="$1"
 
+  # An unreadable switch is not a mode change. Leave the session alone and
+  # say why, rather than treating it as a laptop and undoing a tablet mode
+  # the user is already in.
+  if [[ $mode == unknown ]]; then
+    echo "omarchy-2in1-watch: cannot read the tablet-mode switch; leaving the session as it is" >&2
+    return 0
+  fi
+
   local touchpad keyboard
   touchpad=$(omarchy-hw-touchpad)
   keyboard=$(omarchy-hw-keyboard)
@@ -48,6 +56,11 @@ apply_mode() {
 
 # The helper prints the mode whenever it changes, so one process watches the
 # switch and the override for the whole session.
-/usr/bin/python3 "$TABLET_MODE" watch | while IFS= read -r mode; do
+#
+# The helper must not hold the lock. It outlives this script when the
+# pipeline is torn down, and a lock held by a process that can no longer
+# apply anything keeps the next watcher out for good. The loop that does the
+# applying keeps it, so a second watcher still cannot start alongside it.
+/usr/bin/python3 "$TABLET_MODE" watch 9>&- | while IFS= read -r mode; do
   apply_mode "$mode"
 done
