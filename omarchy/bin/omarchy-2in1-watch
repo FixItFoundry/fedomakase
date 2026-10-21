@@ -3,19 +3,19 @@
 # omarchy:summary=Watch for 2-in-1 mode changes and apply them to the session
 # omarchy:hidden=true
 
-# A 2-in-1 in tablet mode has no keyboard under the user's hands and no
-# touchpad beside it, so both are switched off and the screen turns portrait.
-# Unfolding puts them back.
+# Tablet mode switches the touchpad off, silences the keyboard and turns the
+# screen portrait. Laptop mode puts them back.
 
 LOCK="${XDG_RUNTIME_DIR:-/tmp}/omarchy-2in1-watch.lock"
 TABLET_MODE="$OMARCHY_PATH/default/input/tablet-mode.py"
-OVERRIDE_FILE="$HOME/.local/state/omarchy/2in1/mode"
+STATE_DIR="$HOME/.local/state/omarchy/2in1"
+OVERRIDE_FILE="$STATE_DIR/mode"
+LAYOUT_FILE="$STATE_DIR/layout"
 
 exec 9>"$LOCK"
 flock -n 9 || exit 0
 
-# A machine with no tablet-mode switch and no manual override has nothing to
-# watch, so the watcher stays out of the way.
+# Nothing to watch without a tablet-mode switch or a manual override.
 if ! /usr/bin/python3 "$TABLET_MODE" supported && [[ ! -f $OVERRIDE_FILE ]]; then
   exit 0
 fi
@@ -28,12 +28,44 @@ set_device_enabled() {
   hyprctl eval "hl.device({ name = \"$quoted\", enabled = $enabled })" >/dev/null 2>&1 || true
 }
 
+# "enabled" does nothing to a keyboard: only an empty keymap stops its keys.
+# Only the built-in typing path is silenced: the built-in keyboard and a keyd
+# remap of it if there is one. External keyboards stay alive, which is also
+# the way back into laptop mode. Layouts are saved and restored.
+set_kb_layout() {
+  local name="$1" layout="$2" quoted
+  quoted=${name//\\/\\\\}
+  quoted=${quoted//\"/\\\"}
+  hyprctl eval "hl.device({ name = \"$quoted\", kb_layout = \"$layout\" })" >/dev/null 2>&1 || true
+}
+
+set_keyboards_silent() {
+  local silent="$1" entry name layout builtin
+  builtin=$(omarchy-hw-keyboard)
+  if [[ $silent == true ]]; then
+    mapfile -t entries < <(hyprctl devices -j | jq -r --arg n "$builtin" '
+      .keyboards[] | select(.name == $n or .name == "keyd-virtual-keyboard") |
+      select(.layout != "" and .layout != "empty") | .name + "\t" + .layout')
+    ((${#entries[@]})) || return 0
+    mkdir -p "$STATE_DIR"
+    printf '%s\n' "${entries[@]}" >"$LAYOUT_FILE"
+    for entry in "${entries[@]}"; do
+      IFS=$'\t' read -r name layout <<<"$entry"
+      set_kb_layout "$name" empty
+    done
+  else
+    [[ -r $LAYOUT_FILE ]] || return 0
+    while IFS=$'\t' read -r name layout; do
+      set_kb_layout "$name" "$layout"
+    done <"$LAYOUT_FILE"
+    rm -f "$LAYOUT_FILE"
+  fi
+}
+
 apply_mode() {
   local mode="$1"
 
-  # An unreadable switch is not a mode change. Leave the session alone and
-  # say why, rather than treating it as a laptop and undoing a tablet mode
-  # the user is already in.
+  # An unreadable switch is not a mode change; leave the session alone.
   if [[ $mode == unknown ]]; then
     echo "omarchy-2in1-watch: cannot read the tablet-mode switch; leaving the session as it is" >&2
     return 0
@@ -45,22 +77,17 @@ apply_mode() {
 
   if [[ $mode == tablet ]]; then
     set_device_enabled "$touchpad" false
-    set_device_enabled "$keyboard" false
+    set_keyboards_silent true
   else
     set_device_enabled "$touchpad" true
-    set_device_enabled "$keyboard" true
+    set_keyboards_silent false
   fi
 
   omarchy-2in1-rotate auto >/dev/null 2>&1 || true
 }
 
-# The helper prints the mode whenever it changes, so one process watches the
-# switch and the override for the whole session.
-#
-# The helper must not hold the lock. It outlives this script when the
-# pipeline is torn down, and a lock held by a process that can no longer
-# apply anything keeps the next watcher out for good. The loop that does the
-# applying keeps it, so a second watcher still cannot start alongside it.
+# The helper must not hold the lock: it outlives this script and would block
+# any future watcher for good. The applying loop holds it instead.
 /usr/bin/python3 "$TABLET_MODE" watch 9>&- | while IFS= read -r mode; do
   apply_mode "$mode"
 done
