@@ -23,7 +23,6 @@ import ctypes
 import errno
 import os
 import sys
-import time
 
 IOC_READ = 2
 
@@ -34,7 +33,6 @@ SW_TABLET_MODE = 1
 
 INPUT_CLASS = os.environ.get("OMARCHY_INPUT_CLASS_PATH", "/sys/class/input")
 OVERRIDE_FILE = os.path.expanduser("~/.local/state/omarchy/2in1/mode")
-POLL_SECONDS = 0.2
 
 UNKNOWN = "unknown"
 
@@ -149,13 +147,20 @@ def main():
         sys.exit(0 if mode == "tablet" else (1 if mode == "laptop" else 2))
 
     if command == "watch":
+        event_dir = find_tablet_device()
+        if event_dir is None:
+            sys.stderr.write("tablet-mode: no tablet-mode switch to watch\n")
+            sys.exit(1)
+        fd = os.open(device_path(event_dir), os.O_RDONLY)
         last = None
         while True:
             mode = current_mode()
             if mode != last:
                 print(mode, flush=True)
                 last = mode
-            time.sleep(POLL_SECONDS)
+            # Blocks until the switch device sends anything, so the mode is
+            # re-read on the device's own event instead of a timer.
+            os.read(fd, 4096)
 
     sys.stderr.write(f"Usage: {sys.argv[0]} supported|state|watch\n")
     sys.exit(2)

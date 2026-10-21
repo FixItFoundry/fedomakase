@@ -4,34 +4,28 @@
 # omarchy:args=[tablet|laptop|auto|toggle]
 
 # The kernel never reports folding on some 2-in-1s, so the mode is set by
-# hand; "auto" hands control back to the hardware.
+# hand; "auto" hands control back to the hardware. A switch applies right
+# away; the watcher is only for the orientation switch itself.
 
 STATE_DIR="$HOME/.local/state/omarchy/2in1"
 OVERRIDE_FILE="$STATE_DIR/mode"
-LOCK="${XDG_RUNTIME_DIR:-/tmp}/omarchy-2in1-watch.lock"
 ACTION="${1:-toggle}"
 
 current() {
   omarchy-2in1-mode
 }
 
-# No tablet-mode switch means no watcher, so start one.
-ensure_watcher() {
-  if flock -n "$LOCK" true 2>/dev/null; then
-    omarchy-2in1-watch >/dev/null 2>&1 &
-  fi
-}
-
 set_mode() {
   local mode="$1"
   mkdir -p "$STATE_DIR"
   printf '%s\n' "$mode" >"$OVERRIDE_FILE"
-  ensure_watcher
+  omarchy-2in1-apply "$mode"
   echo "$mode"
 }
 
 clear_mode() {
   rm -f "$OVERRIDE_FILE"
+  omarchy-2in1-apply "$(omarchy-2in1-mode)"
   echo auto
 }
 

@@ -1,0 +1,67 @@
+#!/bin/bash
+
+# omarchy:summary=Apply a 2-in-1 mode to the session's devices
+# omarchy:args=[tablet|laptop]
+# omarchy:hidden=true
+
+# Raises one mode on the session. Tablet mode kills the touchpad and
+# silences the built-in keyboard; laptop mode restores both and rotates the
+# screen upright.
+
+MODE="${1:-}"
+[[ $MODE == tablet || $MODE == laptop ]] || { echo "Usage: omarchy-2in1-apply [tablet|laptop]" >&2; exit 1; }
+
+STATE_DIR="$HOME/.local/state/omarchy/2in1"
+LAYOUT_FILE="$STATE_DIR/layout"
+
+set_device_enabled() {
+  local name="$1" enabled="$2" quoted
+  [[ -n $name ]] || return 0
+  quoted=${name//\\/\\\\}
+  quoted=${quoted//\"/\\\"}
+  hyprctl eval "hl.device({ name = \"$quoted\", enabled = $enabled })" >/dev/null 2>&1 || true
+}
+
+# "enabled" does nothing to a keyboard: only an empty keymap stops its keys.
+# Only the built-in typing path is silenced: the built-in keyboard and a keyd
+# remap of it if there is one. External keyboards stay alive, which is also
+# the way back into laptop mode. Layouts are saved and restored.
+set_kb_layout() {
+  local name="$1" layout="$2" quoted
+  quoted=${name//\\/\\\\}
+  quoted=${quoted//\"/\\\"}
+  hyprctl eval "hl.device({ name = \"$quoted\", kb_layout = \"$layout\" })" >/dev/null 2>&1 || true
+}
+
+set_keyboards_silent() {
+  local silent="$1" entry name layout builtin
+  builtin=$(omarchy-hw-keyboard)
+  if [[ $silent == true ]]; then
+    mapfile -t entries < <(hyprctl devices -j | jq -r --arg n "$builtin" '
+      .keyboards[] | select(.name == $n or .name == "keyd-virtual-keyboard") |
+      select(.layout != "" and .layout != "empty") | .name + "\t" + .layout')
+    ((${#entries[@]})) || return 0
+    mkdir -p "$STATE_DIR"
+    printf '%s\n' "${entries[@]}" >"$LAYOUT_FILE"
+    for entry in "${entries[@]}"; do
+      IFS=$'\t' read -r name layout <<<"$entry"
+      set_kb_layout "$name" empty
+    done
+  else
+    [[ -r $LAYOUT_FILE ]] || return 0
+    while IFS=$'\t' read -r name layout; do
+      set_kb_layout "$name" "$layout"
+    done <"$LAYOUT_FILE"
+    rm -f "$LAYOUT_FILE"
+  fi
+}
+
+if [[ $MODE == tablet ]]; then
+  set_device_enabled "$(omarchy-hw-touchpad)" false
+  set_keyboards_silent true
+else
+  set_device_enabled "$(omarchy-hw-touchpad)" true
+  set_keyboards_silent false
+fi
+
+omarchy-2in1-rotate auto >/dev/null 2>&1 || true
