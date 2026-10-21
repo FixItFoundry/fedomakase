@@ -1,56 +1,53 @@
 #!/bin/bash
 
 # omarchy:summary=Rotate the built-in display for the 2-in-1's current mode
-# omarchy:args=[portrait|landscape|auto]
+# omarchy:args=[portrait|landscape|auto|watch]
 # omarchy:hidden=true
 
-# Orientation comes from an accelerometer when iio-sensor-proxy has one,
-# otherwise from the mode: folded is portrait, open is landscape.
+# Only tablet mode follows the accelerometer; laptop mode stays upright.
 ORIENTATION="${1:-auto}"
+
+if [[ $ORIENTATION == "watch" ]]; then
+  exec {sensor_fd}< <(exec stdbuf -oL monitor-sensor --accel)
+  sensor_pid=$!
+  trap 'kill "$sensor_pid" 2>/dev/null || true; wait "$sensor_pid" 2>/dev/null || true' EXIT
+  trap 'exit 0' INT TERM
+  while IFS= read -r line <&"$sensor_fd"; do
+    case "$line" in
+      *"Has accelerometer"* | *"Accelerometer orientation changed:"*) "$0" auto ;;
+    esac
+  done
+  exit 0
+fi
 
 INTERNAL=$(omarchy-hyprland-monitor-laptop)
 [[ -n $INTERNAL ]] || exit 0
 
 transform_for_accelerometer() {
   local reading
-  # Some builds publish the sensor on the session bus instead of the system bus.
-  for bus in --system --session; do
-    reading=$(gdbus call "$bus" --dest net.hadess.SensorProxy \
-      --object-path /net/hadess/SensorProxy \
-      --method net.hadess.SensorProxy.GetAccelerometer 2>/dev/null) && break
-  done
-  [[ $reading == "("*","*")" ]] || return 1
-
-  local x y z
-  x=$(sed -E 's/^\(([-0-9.]+),.*/\1/' <<<"$reading")
-  y=$(sed -E 's/^\([-0-9.]+, ([-0-9.]+),.*/\1/' <<<"$reading")
-  z=$(sed -E 's/^\([-0-9.]+, [-0-9.]+, ([-0-9.]+)\).*/\1/' <<<"$reading")
-  [[ -n $x && -n $y && -n $z ]] || return 1
-
-  # The accelerometer reads in g, with the screen facing up as +z.
-  awk -v x="$x" -v y="$y" -v z="$z" 'BEGIN {
-    if (z < -0.7) { print 2; exit }
-    if ((x < 0 ? -x : x) > (y < 0 ? -y : y)) { print (x > 0 ? 1 : 3); exit }
-    print 0
-  }'
+  reading=$(busctl --system get-property net.hadess.SensorProxy /net/hadess/SensorProxy \
+    net.hadess.SensorProxy AccelerometerOrientation 2>/dev/null) || return 1
+  case "$reading" in
+    's "normal"') echo 0 ;;
+    's "left-up"') echo 1 ;;
+    's "bottom-up"') echo 2 ;;
+    's "right-up"') echo 3 ;;
+    *) return 1 ;;
+  esac
 }
 
-transform_for_mode() {
-  [[ $1 == tablet ]] && echo 1 || echo 0
-}
 case "$ORIENTATION" in
   portrait) transform=1 ;;
   landscape) transform=0 ;;
   auto)
-    mode=$(omarchy-2in1-mode)
-    if [[ $mode == unknown ]]; then
-      # Nothing is known about the orientation, so the panel stays as it is.
-      exit 0
-    fi
-    transform=$(transform_for_accelerometer) || transform=$(transform_for_mode "$mode")
+    case "$(omarchy-2in1-mode)" in
+      laptop) transform=0 ;;
+      tablet) transform=$(transform_for_accelerometer) || exit 0 ;;
+      *) exit 0 ;;
+    esac
     ;;
   *)
-    echo "Usage: omarchy-2in1-rotate [portrait|landscape|auto]" >&2
+    echo "Usage: omarchy-2in1-rotate [portrait|landscape|auto|watch]" >&2
     exit 1
     ;;
 esac
@@ -61,12 +58,12 @@ esac
 # are read back off the panel and reapplied with only the transform changed.
 read -r mode position scale <<<"$(hyprctl monitors all -j | jq -r --arg internal "$INTERNAL" '
   .[] | select(.name == $internal) |
-  "\([.width, .height] | max)x\([.width, .height] | min)@\(.refreshRate | floor) \(.x)x\(.y) \(.scale)"
+  "\([.width, .height] | max)x\([.width, .height] | min)@\(.refreshRate) \(.x)x\(.y) \(.scale)"
 ')"
 
 [[ -n $mode && -n $position && -n $scale ]] || exit 0
 
-hyprctl eval "hl.monitor({ output = \"$INTERNAL\", mode = \"$mode\", position = \"$position\", scale = $scale, transform = $transform })" >/dev/null 2>&1 || true
+hyprctl eval "hl.monitor({ output = \"$INTERNAL\", mode = \"$mode\", position = \"$position\", scale = $scale, transform = $transform })" >/dev/null || exit 1
 
 # Touch input follows the panel's orientation.
-hyprctl eval "hl.config({ input = { touchdevice = { transform = $transform } } })" >/dev/null 2>&1 || true
+hyprctl eval "hl.config({ input = { touchdevice = { transform = $transform } } })" >/dev/null

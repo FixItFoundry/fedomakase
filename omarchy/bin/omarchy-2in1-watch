@@ -17,8 +17,13 @@ if ! /usr/bin/python3 "$TABLET_MODE" supported; then
   exit 0
 fi
 
-# The helper must not hold the lock: it outlives this script and would block
-# any future watcher for good. The applying loop holds it instead.
-/usr/bin/python3 "$TABLET_MODE" watch 9>&- | while IFS= read -r mode; do
+# Only this watcher owns the lock; both event readers are stopped on exit.
+exec {switch_fd}< <(exec /usr/bin/python3 "$TABLET_MODE" watch 9>&-)
+switch_pid=$!
+omarchy-2in1-rotate watch 9>&- &
+rotate_pid=$!
+trap 'kill "$switch_pid" "$rotate_pid" 2>/dev/null || true; wait "$switch_pid" "$rotate_pid" 2>/dev/null || true' EXIT
+trap 'exit 0' INT TERM
+while IFS= read -r mode <&"$switch_fd"; do
   omarchy-2in1-apply "$mode" >/dev/null 2>&1 || true
 done
