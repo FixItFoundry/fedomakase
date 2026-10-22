@@ -56,7 +56,7 @@ SYNC_BINS=(omarchy-pkg-add omarchy-pkg-aur-add omarchy-pkg-drop omarchy-pkg-miss
   omarchy-install-dictation-superwhisper omarchy-remove-dictation-superwhisper
   omarchy-voxtype-config omarchy-voxtype-model omarchy-install-video-decode omarchy-first-run omarchy-nvim-setup uwsm-app)
 for dest in "$OMARCHY" "$STASH/payload"; do
-  mkdir -p "$dest/bin" "$dest/install/hardware" "$dest/etc/sddm.conf.d" "$dest/default/nvim"
+  mkdir -p "$dest/bin" "$dest/install/hardware" "$dest/etc/sddm.conf.d" "$dest/default/nvim" "$dest/default/input"
   for f in "${SYNC_BINS[@]}"; do
     cp "$PAYLOAD/bin/$f" "$dest/bin/$f"
     chmod +x "$dest/bin/$f"
@@ -65,6 +65,15 @@ for dest in "$OMARCHY" "$STASH/payload"; do
   cp "$PAYLOAD/install/hardware/all.sh" "$PAYLOAD/install/hardware/google-chromebook.sh" "$dest/install/hardware/"
   cp "$PAYLOAD/etc/sddm.conf.d/10-wayland.conf" "$dest/etc/sddm.conf.d/10-wayland.conf"
   cp -r "$PAYLOAD/default/nvim/." "$dest/default/nvim/"
+  # 2-in-1 tablet scripts are ours, not upstream: both the live system and the
+  # stash payload carry them so the post-update hook can restore the suite
+  # after any wholesale refresh of /usr/share/omarchy.
+  for f in omarchy-2in1-apply omarchy-2in1-mode omarchy-2in1-rotate \
+           omarchy-2in1-watch omarchy-hw-tablet-mode omarchy-toggle-2in1; do
+    cp "$PAYLOAD/bin/$f" "$dest/bin/$f"
+    chmod +x "$dest/bin/$f"
+  done
+  cp "$PAYLOAD/default/input/tablet-mode.py" "$dest/default/input/"
 done
 ln -sf "$OMARCHY/bin/uwsm-app" /usr/local/bin/uwsm-app
 ln -sf "$OMARCHY/bin/omarchy-nvim-setup" /usr/bin/omarchy-nvim-setup

@@ -27,19 +27,30 @@ fi
 
 # Re-sync payload-owned files first: upstream updates replace these wholesale
 # and the sed runner cannot reconstruct them. The stash is the durable source.
-if [[ -d $STASH/payload/bin ]]; then
+if [[ -f $STASH/payload/bin/omarchy-2in1-watch ]]; then
+  echo "fedomakase: restoring 2-in-1 tablet suite from stash..."
+  sudo_cmd=""
+  (( EUID == 0 )) || sudo_cmd="sudo"
+  $sudo_cmd cp "$STASH/payload/bin/"omarchy-2in1-apply "$STASH/payload/bin/"omarchy-2in1-mode \
+              "$STASH/payload/bin/"omarchy-2in1-rotate "$STASH/payload/bin/"omarchy-2in1-watch \
+              "$STASH/payload/bin/"omarchy-hw-tablet-mode "$STASH/payload/bin/"omarchy-toggle-2in1 \
+              "$OMARCHY/bin/"
+  $sudo_cmd chmod +x "$OMARCHY/bin/"*
+  $sudo_cmd mkdir -p "$OMARCHY/default/input"
+  $sudo_cmd cp "$STASH/payload/default/input/tablet-mode.py" "$OMARCHY/default/input/"
+fi
+
+# The full payload (Fedora helpers) only ever exists if scripts/apply.sh ran
+# to completion; testing its marker keeps a tablet-only stash from tripping
+# these copies, and cp -r carries the install/hardware subdirectory.
+if [[ -f $STASH/payload/install/omarchy-fedora-base.packages ]]; then
   echo "fedomakase: re-syncing payload helpers from stash..."
-  if (( EUID == 0 )); then
-    cp "$STASH/payload/bin/"* "$OMARCHY/bin/"
-    cp "$STASH/payload/install/"* "$OMARCHY/install/"
-    cp "$STASH/payload/etc/sddm.conf.d/10-wayland.conf" "$OMARCHY/etc/sddm.conf.d/10-wayland.conf"
-    chmod +x "$OMARCHY/bin/"*
-  else
-    sudo cp "$STASH/payload/bin/"* "$OMARCHY/bin/"
-    sudo cp "$STASH/payload/install/"* "$OMARCHY/install/"
-    sudo cp "$STASH/payload/etc/sddm.conf.d/10-wayland.conf" "$OMARCHY/etc/sddm.conf.d/10-wayland.conf"
-    sudo chmod +x "$OMARCHY/bin/"*
-  fi
+  sudo_cmd=""
+  (( EUID == 0 )) || sudo_cmd="sudo"
+  $sudo_cmd cp "$STASH/payload/bin/"* "$OMARCHY/bin/"
+  $sudo_cmd chmod +x "$OMARCHY/bin/"*
+  $sudo_cmd cp -r "$STASH/payload/install/"* "$OMARCHY/install/"
+  $sudo_cmd cp "$STASH/payload/etc/sddm.conf.d/10-wayland.conf" "$OMARCHY/etc/sddm.conf.d/10-wayland.conf"
 fi
 
 if (( EUID == 0 )); then
