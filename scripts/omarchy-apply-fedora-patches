@@ -115,6 +115,12 @@ if [[ -d "$OMARCHY/applications" ]]; then
     if [[ -d "$user_dir" ]]; then
       user_name=$(basename "$user_dir")
       if [[ "$user_name" != "lost+found" ]]; then
+        # Preserve apps the user explicitly removed (see omarchy-remove-preinstalls):
+        # restoring them on every update undoes that choice.
+        if [[ -f "$user_dir/.local/state/omarchy/preinstalls-removed" ]]; then
+          echo "  skipping webapp manifests for $user_name (preinstalls removed)"
+          continue
+        fi
         mkdir -p "$user_dir/.local/share/applications" \
                  "$user_dir/.local/share/flatpak/exports/share/applications" \
                  "$user_dir/.local/share/flatpak/exports/share/icons"

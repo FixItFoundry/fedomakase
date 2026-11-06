@@ -2,15 +2,26 @@
 
 # omarchy:summary=Ensure default application launchers and mise wrappers are installed.
 
-# Copy .desktop declarations
+# Copy .desktop declarations. Shipped web apps are skipped when the user has
+# removed the preinstalls, so an update does not resurrect them.
 mkdir -p ~/.local/share/applications
-cp "$OMARCHY_PATH"/applications/*.desktop ~/.local/share/applications/
+if [[ -f "$HOME/.local/state/omarchy/preinstalls-removed" ]]; then
+  for desktop in "$OMARCHY_PATH"/applications/*.desktop; do
+    [[ -f $desktop ]] || continue
+    if grep -qE 'Exec=.*(omarchy-launch-webapp|omarchy-webapp-handler)' "$desktop"; then
+      continue
+    fi
+    cp "$desktop" ~/.local/share/applications/
+  done
+else
+  cp "$OMARCHY_PATH"/applications/*.desktop ~/.local/share/applications/
+fi
 
 if omarchy-cmd-present alacritty; then
   cp "$OMARCHY_PATH/default/alacritty/Alacritty.desktop" ~/.local/share/applications/
 fi
 
-if [[ -f "$OMARCHY_PATH/install/user/mise.sh" ]]; then
+if [[ ! -f "$HOME/.local/state/omarchy/preinstalls-removed" && -f "$OMARCHY_PATH/install/user/mise.sh" ]]; then
   bash "$OMARCHY_PATH/install/user/mise.sh"
 fi
 

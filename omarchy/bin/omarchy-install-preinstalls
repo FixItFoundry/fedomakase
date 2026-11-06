@@ -7,7 +7,13 @@ if gum confirm --affirmative "$(omarchy-i18n common.yes)" --negative "$(omarchy-
   echo -e "Restoring preinstalled Omarchy applications...\n"
 
   # Recreates the shipped .desktop launchers (web apps and TUIs) and the mise stubs
-  # that back claude, gh, opencode, and the rest of the agents
+  # that back claude, gh, opencode, and the rest of the agents. Drop the opt-out
+  # marker first so omarchy-refresh-applications does not skip the web apps it is
+  # supposed to bring back; restore it if the package transaction fails.
+  marker="$HOME/.local/state/omarchy/preinstalls-removed"
+  had_marker=0
+  [[ -f $marker ]] && had_marker=1
+  rm -f "$marker"
   omarchy-refresh-applications
 
   # Mirrors the list in omarchy-remove-preinstalls; both track omarchy-base.packages
@@ -24,12 +30,13 @@ if gum confirm --affirmative "$(omarchy-i18n common.yes)" --negative "$(omarchy-
     omawrite \
     hype \
     signed; then
+    (( had_marker )) && touch "$marker"
     echo -e "\nPreinstalls are still marked as removed. Fix the errors above and try again."
     exit 1
   fi
 
   # Last, so a failure above leaves the opt-out intact rather than restoring
   # keybindings for apps that never came back
-  rm -f ~/.local/state/omarchy/preinstalls-removed
+  rm -f "$marker"
   hyprctl reload
 fi
