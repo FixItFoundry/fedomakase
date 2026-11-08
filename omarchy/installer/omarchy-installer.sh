@@ -623,7 +623,9 @@ clear
 target_disk_name=$(basename "$disk")
 gecos_name="${full_name:-$username}"
 gecos_name="${gecos_name//\"/}"
-luks_pass_escaped="${password//\"/\\\"}"
+# Kickstart parses lines shlex-style: escape backslashes before quotes
+luks_pass_escaped="${password//\\/\\\\}"
+luks_pass_escaped="${luks_pass_escaped//\"/\\\"}"
 
 {
   echo "keyboard --vckeymap=${keyboard}"

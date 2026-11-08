@@ -47,8 +47,10 @@ check "installer prompts for keyboard, hostname, and timezone" \
   bash -c "grep -q 'OMARCHY_KEYBOARD_LAYOUTS' '$OMARCHY/installer/omarchy-installer.sh' && grep -q -- '--hostname=' '$OMARCHY/installer/omarchy-installer.sh' && grep -q '^  echo \"timezone ' '$OMARCHY/installer/omarchy-installer.sh'"
 check "installer hashes user password" \
   bash -c "grep -q 'openssl passwd -6' '$OMARCHY/installer/omarchy-installer.sh'"
-check "installer rejects double quotes in LUKS passphrase" \
-  bash -c "grep -q 'cannot contain double-quote' '$OMARCHY/installer/omarchy-installer.sh'"
+check "installer escapes LUKS passphrase for kickstart parsing" \
+  bash -c 'esc=$(grep "^luks_pass_escaped=" "$1"); for password in "end\\" "a\\\\b" "q\"t" "x\\\"y"; do
+    eval "$esc"; got=$(python3 -c "import shlex,sys; print(shlex.split(sys.argv[1])[0],end=\"\")" "\"$luks_pass_escaped\"") || exit 1
+    [[ $got == "$password" ]] || exit 1; done' _ "$OMARCHY/installer/omarchy-installer.sh"
 
 # --- SDDM & uwsm-app & GRUB2 reboot-boot-menu ---
 check "sddm wayland conf launches via uwsm" \

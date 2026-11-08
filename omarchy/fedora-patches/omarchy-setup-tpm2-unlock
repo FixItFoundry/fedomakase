@@ -10,7 +10,7 @@ set -euo pipefail
 echo -e "\e[32m=== Omarchy TPM2 Auto-Unlock Setup ===\e[0m"
 
 # Find LUKS device
-luks_dev=$(lsblk -o NAME,FSTYPE -dn | grep crypto_LUKS | awk '{print $1}' | head -n 1)
+luks_dev=$(lsblk -o NAME,FSTYPE -ln | grep crypto_LUKS | awk '{print $1}' | head -n 1)
 
 if [[ -z $luks_dev ]]; then
   echo -e "\e[31mNo LUKS encrypted partition found on this system.\e[0m"

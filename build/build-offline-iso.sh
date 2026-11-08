@@ -101,6 +101,34 @@ echo "[5/7] Mirroring manifest packages (fedora + updates + COPR)..."
 mapfile -t MANIFEST_PKGS < <(sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$OMARCHY_DIR/install/omarchy-fedora-base.packages" | grep -v '^$' || true)
 (( ${#MANIFEST_PKGS[@]} > 0 )) || { echo "Error: manifest parsed to zero packages." >&2; exit 1; }
 
+# The kickstart asks for @core and @hardware-support: the local repo needs Fedora's
+# comps (group definitions) plus every mandatory/default member mirrored.
+COMPS="$BUILD_DIR/comps.xml"
+mapfile -t GROUP_PKGS < <(python3 - "$COMPS" core hardware-support << 'PY'
+import gzip, lzma, subprocess, sys, urllib.request, xml.etree.ElementTree as ET
+base = "https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/"
+R = "{http://linux.duke.edu/metadata/repo}"
+repomd = ET.fromstring(urllib.request.urlopen(base + "repodata/repomd.xml", timeout=60).read())
+hrefs = {d.attrib.get("type"): d.find(R + "location").attrib["href"] for d in repomd.findall(R + "data")}
+href = next(hrefs[k] for k in ("group", "group_xz", "group_gz", "group_zst") if k in hrefs)
+raw = urllib.request.urlopen(base + href, timeout=120).read()
+# Fedora compresses even the plain "group" entry, so go by extension
+if href.endswith(".zst"): xml = subprocess.check_output(["zstd", "-dc"], input=raw)
+elif href.endswith(".xz"): xml = lzma.decompress(raw)
+elif href.endswith(".gz"): xml = gzip.decompress(raw)
+else: xml = raw
+open(sys.argv[1], "wb").write(xml)
+groups = {g.findtext("id"): g for g in ET.fromstring(xml).iter("group")}
+for gid in sys.argv[2:]:
+    for req in groups[gid].iter("packagereq"):
+        if req.attrib.get("type", "default") in ("mandatory", "default"):
+            print(req.text)
+PY
+)
+(( ${#GROUP_PKGS[@]} > 0 )) && [[ -s $COMPS ]] || { echo "Error: could not fetch Fedora comps for @core/@hardware-support." >&2; exit 1; }
+echo "  Adding ${#GROUP_PKGS[@]} @core/@hardware-support members to the mirror."
+MANIFEST_PKGS+=("${GROUP_PKGS[@]}")
+
 REPO_DIR_TARGET="$BUILD_DIR/extracted/omarchy-repo"
 mkdir -p "$REPO_DIR_TARGET"
 
@@ -133,7 +161,7 @@ done
 if ! command -v createrepo_c &>/dev/null; then
   dnf install -y createrepo_c
 fi
-createrepo_c "$REPO_DIR_TARGET"
+createrepo_c -g "$COMPS" "$REPO_DIR_TARGET"
 
 # Payload
 mkdir -p "$BUILD_DIR/extracted/omarchy-fedora"
